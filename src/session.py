@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Phase 3: Debate Session Orchestrator
+Debate Session Orchestrator
 
 Integrates all Phase 3 components:
 - DebateDAG for persistence
@@ -20,11 +20,11 @@ from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent))
 
 from dialectic_poc import Agent, DebateTurn, Logger, llm_call
-from phase3_dag import DebateDAG, ArgumentNode, NodeType, Edge, EdgeType
-from phase3_nodes import NodeCreationDetector, NodeFactory
-from phase3_similarity import ContextRetriever
-from phase3_edges import EdgeDetector
-from phase3_linearize import LinearizationEngine
+from debate_graph import DebateDAG, ArgumentNode, NodeType, Edge, EdgeType
+from node_factory import NodeCreationDetector, NodeFactory
+from context_retrieval import ContextRetriever
+from edge_detection import EdgeDetector
+from linearization import LinearizationEngine
 
 
 class DebateSession:

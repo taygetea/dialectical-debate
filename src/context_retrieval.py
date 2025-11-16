@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Phase 3: Context Retrieval
+Context Retrieval
 
 Provides relevant ArgumentNodes as context for new debates.
 
@@ -15,7 +15,7 @@ from typing import List, Set
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from phase3_dag import ArgumentNode, DebateDAG, NodeType
+from debate_graph import ArgumentNode, DebateDAG, NodeType
 from dialectic_poc import DebateTurn
 
 
@@ -237,7 +237,7 @@ if __name__ == "__main__":
     print("Testing ContextRetriever...")
 
     # Create mock DAG with nodes
-    from phase3_dag import DebateDAG, ArgumentNode, NodeType
+    from debate_graph import DebateDAG, ArgumentNode, NodeType
 
     dag = DebateDAG()
 

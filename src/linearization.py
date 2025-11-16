@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Phase 3: Linearization Engine
+Linearization Engine
 
 Converts DebateDAG to linear markdown narrative.
 
@@ -15,7 +15,7 @@ from collections import deque
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from phase3_dag import DebateDAG, ArgumentNode, EdgeType
+from debate_graph import DebateDAG, ArgumentNode, EdgeType
 
 
 class LinearizationEngine:
@@ -268,7 +268,7 @@ if __name__ == "__main__":
     # Test with mock data
     print("Testing LinearizationEngine...\n")
 
-    from phase3_dag import DebateDAG, ArgumentNode, NodeType, Edge, EdgeType, create_edge
+    from debate_graph import DebateDAG, ArgumentNode, NodeType, Edge, EdgeType, create_edge
     import time
 
     # Create test DAG

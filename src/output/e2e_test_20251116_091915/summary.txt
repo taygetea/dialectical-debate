@@ -1,0 +1,11 @@
+DebateDAG Summary
+================
+Nodes: 2
+Edges: 1
+
+Node Types:
+  exploration: 1
+  impasse: 1
+
+Edge Types:
+  branches_from: 1

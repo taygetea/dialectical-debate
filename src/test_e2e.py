@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Phase 3: End-to-End Integration Test
+End-to-End Integration Test
 
 Tests the complete graph-building workflow with real LLM debates.
 """
@@ -13,7 +13,7 @@ from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent))
 
 from dialectic_poc import Agent, Logger
-from phase3_session import DebateSession
+from session import DebateSession
 
 # Suppress verbose output
 import os

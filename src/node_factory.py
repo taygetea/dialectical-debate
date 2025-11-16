@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Phase 3: Node Creation Logic
+Node Creation Logic
 
 Detects when debates reach semantic completion and creates ArgumentNodes.
 """
@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from dialectic_poc import DebateTurn, llm_call
-from phase3_dag import ArgumentNode, NodeType
+from debate_graph import ArgumentNode, NodeType
 from typing import List, Tuple, Optional, Set
 import re
 

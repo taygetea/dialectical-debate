@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Phase 3: Edge Detection
+Edge Detection
 
 Automatically detects relationships between ArgumentNodes.
 
@@ -18,8 +18,8 @@ import re
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from phase3_dag import ArgumentNode, Edge, EdgeType, DebateDAG
-from phase3_similarity import SimpleSimilarity
+from debate_graph import ArgumentNode, Edge, EdgeType, DebateDAG
+from context_retrieval import SimpleSimilarity
 
 
 class EdgeDetector:
@@ -399,7 +399,7 @@ if __name__ == "__main__":
     # Test with mock data
     print("Testing EdgeDetector...")
 
-    from phase3_dag import DebateDAG, ArgumentNode, NodeType
+    from debate_graph import DebateDAG, ArgumentNode, NodeType
     import time
 
     dag = DebateDAG()

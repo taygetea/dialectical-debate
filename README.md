@@ -1,22 +1,19 @@
 # Dialectical Debate System
 
-**A multi-perspective debate system that generates insights through branching discussions and diverse observer viewpoints**
-
-## Status
-
-- ✅ **Phase 0:** Core debate mechanism with branching and merge-back
-- ✅ **Phase 1:** Single observer with biased perspectives
-- ✅ **Phase 2:** Automated observer generation with diversity optimization
-- 🔨 **Phase 3:** Graph structure (DAG) - Ready to implement
+**A multi-perspective debate system that builds persistent knowledge graphs through branching discussions and diverse observer viewpoints**
 
 ## What This Does
 
-The system generates philosophical debates between hard-coded agents (Literalist, Symbolist, Structuralist) on passages of text. Key innovations:
+The system generates philosophical debates between hard-coded agents (Literalist, Symbolist, Structuralist) on passages of text, accumulating insights into a persistent graph structure.
 
-1. **Branch-and-merge:** Debates can branch off to explore specific questions, then merge insights back
-2. **Biased observers:** Instead of generic "what's important?" detection, observers with specific perspectives identify non-obvious branch points
-3. **Automated diversity:** Generates multiple maximally-different observers for any passage
-4. **Rich logging:** Every turn gets LLM-generated summaries, phase summaries, and structured output
+### Key Features
+
+1. **Branching debates:** Discussions branch off to explore specific questions, then integrate back
+2. **Biased observers:** Specialized perspectives identify non-obvious tensions worth exploring
+3. **Automated diversity:** Generates maximally-different observers for any passage
+4. **Persistent knowledge graph:** Debates become nodes in a DAG with typed relationships
+5. **Context retrieval:** New debates reference and build on past discussions
+6. **Narrative export:** Graph linearizes to readable markdown with topological ordering
 
 ## Quick Start
 
@@ -24,7 +21,7 @@ The system generates philosophical debates between hard-coded agents (Literalist
 
 - Python 3.8+
 - [simonw/llm](https://github.com/simonw/llm) CLI tool
-- ElectronHub API access (or modify for your provider)
+- LLM API access (ElectronHub, OpenAI, Anthropic, etc.)
 
 ### Setup
 
@@ -33,26 +30,26 @@ The system generates philosophical debates between hard-coded agents (Literalist
 pip install llm
 
 # Configure your LLM provider
-llm keys set electronhub
+llm keys set electronhub  # or your provider
 # Enter your API key
 
 # Set default model
 llm models default electronhub/claude-sonnet-4-5-20250929
 ```
 
-### Run Your First Debate
+### Run Your First Session
 
 ```bash
 cd dialectical-debate/src
 
-# Phase 0: Basic debate with manual branch point
+# Basic debate with manual branch point
 python dialectic_poc.py
 
-# Phase 2: Generate 5 diverse observers and run multi-observer debate
+# Multi-observer debate (generates diverse perspectives)
 python multi_observer_test.py
 
-# Phase 1: Compare generic vs. observer-driven branch detection
-python phase1_comparison.py
+# Full graph-building session (persistent knowledge accumulation)
+python test_e2e.py
 ```
 
 ## Project Structure
@@ -64,20 +61,22 @@ dialectical-debate/
 ├── ARCHITECTURE.md             # System design and concepts
 ├── src/                        # Source code
 │   ├── dialectic_poc.py        # Core: Agents, Observers, Debates, Logging
-│   ├── phase2_observer_generation.py  # Automated observer generation
-│   ├── phase1_comparison.py    # Generic vs. observer comparison
-│   └── multi_observer_test.py  # Multi-observer on same passage
+│   ├── debate_graph.py         # ArgumentNode, Edge, DebateDAG classes
+│   ├── node_factory.py         # Node creation and completion detection
+│   ├── edge_detection.py       # Automatic relationship detection
+│   ├── context_retrieval.py    # Context from past debates
+│   ├── linearization.py        # Graph to markdown narrative
+│   ├── session.py              # Main orchestrator (DebateSession)
+│   ├── phase2_observer_generation.py  # Observer auto-generation
+│   └── multi_observer_test.py  # Multi-observer examples
 ├── docs/                       # Documentation
-│   ├── PHASE_0_1_2_COMPLETE.md # What's been built
-│   ├── PHASE_3_NEXT.md         # What to build next
 │   ├── DESIGN_DECISIONS.md     # Key design choices
-│   └── phase3_*.md             # Phase 3 planning documents
+│   ├── ARCHITECTURE.md         # System architecture
+│   └── *.md                    # Implementation guides
 ├── examples/                   # Sample outputs
 │   ├── multi_observer_report_*.md
-│   ├── comparison_*.md
 │   └── ensemble_*.json
-├── tests/                      # Tests (future)
-└── data/                       # Debate logs, ensembles (generated)
+└── output/                     # Generated sessions (DAGs, narratives)
 ```
 
 ## Core Concepts
@@ -85,123 +84,164 @@ dialectical-debate/
 ### Agents vs. Observers
 
 **Agents** participate in debates:
-- The Literalist (focuses on literal text)
-- The Symbolist (everything is metaphor)
-- The Structuralist (universal narrative patterns)
+- **The Literalist:** Focuses on literal text and factual claims
+- **The Symbolist:** Reads symbolic and archetypal meanings
+- **The Structuralist:** Analyzes patterns and formal relationships
 
 **Observers** identify branch points from biased perspectives:
-- Phase 1: Hand-crafted (Phenomenologist, Materialist Historian, Pragmatist Engineer)
-- Phase 2: Auto-generated with maximal diversity
+- Auto-generated with maximal diversity
+- Each observer has specific focus and blind spots
+- Generate non-obvious questions that generic detection would miss
 
 ### Debate Flow
 
 ```
-1. Main Debate (3 rounds)
+1. Main Debate (3 rounds on passage)
    ↓
-2. Observer identifies branch point
+2. Observer identifies tension/question
    ↓
 3. Branch Debate (2 rounds on specific question)
    ↓
-4. Synthesis (what got resolved/remains in tension)
+4. Node Creation (semantic completion unit)
    ↓
-5. Merge-back (enriched understanding of original passage)
+5. Edge Detection (relationships to past nodes)
+   ↓
+6. Context Integration (available for future debates)
+   ↓
+7. Narrative Export (linearized markdown)
 ```
 
-### Key Innovation: Biased Observers
+### Knowledge Graph Structure
 
-Instead of asking "what's unresolved?" (generic), observers ask "from MY perspective, what are they missing?"
+**ArgumentNode:** A semantically complete debate segment
+- Topic (1-2 sentence summary)
+- Resolution (paragraph summary)
+- Type (synthesis, impasse, exploration, etc.)
+- Theme tags, key claims, full transcript
 
-Example observer biases:
-- "Only first-person lived experience is primary" → asks about phenomenology
-- "All ideas are products of material conditions" → asks about class dynamics
-- "Ideas only matter if they have practical consequences" → asks about testability
+**Edge:** Typed relationship between nodes
+- BRANCHES_FROM (branch debates)
+- CONTRADICTS (opposing positions)
+- ELABORATES (builds on previous idea)
 
-Result: **Non-obvious branch points** that wouldn't emerge from generic detection.
+**DebateDAG:** The persistent graph
+- Accumulates nodes across multiple passages
+- Detects relationships automatically
+- Exports to JSON for persistence
+- Linearizes to markdown for reading
 
-## Phase 2 Results
+## Example Session
 
-**Diversity metrics:**
-- Average pairwise distance between generated observers: **0.928**
-- Question differentiation across observers: **89.5%**
+```python
+from session import DebateSession
+from dialectic_poc import Agent, Logger
 
-**Example: Kafka's Metamorphosis**
+# Create agents
+agents = [
+    Agent("The Literalist", "You interpret literally...", "Facts"),
+    Agent("The Symbolist", "You see symbols...", "Archetypes"),
+    Agent("The Structuralist", "You analyze patterns...", "Structure")
+]
 
-Five auto-generated observers each found completely different angles:
+# Start session
+session = DebateSession("my_reading")
+logger = Logger("output/my_reading/log.md")
+
+# Process passages
+passage1 = "When Zarathustra was thirty years old..."
+node1 = session.process_passage(passage1, agents, logger)
+
+# Branch debates happen automatically via observers
+# Or manually:
+branch_question = "What does 'thirty years' signify?"
+node2 = session.process_branch(branch_question, node1.node_id, agents, logger)
+
+# Export narrative
+session.export_narrative("output/my_reading/narrative.md")
+```
+
+## Observer Generation Example
+
+**Kafka's Metamorphosis passage** generated five maximally-different observers:
 
 1. **Bureaucratic Logistics Analyst:** "What administrative category would Gregor occupy?"
 2. **Somatic Memory Archaeologist:** "What pre-human motor memories does his body know?"
-3. **Narrative Temporality Saboteur:** "Why does the temporal structure create an unbridgeable gap?"
-4. **Domestic Architecture Semiotician:** "Why specify 'in his bed'—how does furniture enforce species boundaries?"
-5. **Metabolic Catastrophe Physician:** "Is Gregor's mundane worry about trains the confusion of an oxygen-deprived brain?"
+3. **Narrative Temporality Saboteur:** "Why does temporal structure create unbridgeable gap?"
+4. **Domestic Architecture Semiotician:** "How does furniture enforce species boundaries?"
+5. **Metabolic Catastrophe Physician:** "Is Gregor's worry the confusion of oxygen-deprived brain?"
 
-## What's Next: Phase 3
-
-Transform from linear transcripts to **semantic knowledge graph**:
-
-- **ArgumentNodes:** Semantic completion units (not individual turns)
-- **Typed edges:** BRANCHES_FROM, CONTRADICTS, ELABORATES, etc.
-- **Context retrieval:** New debates reference relevant past nodes
-- **Linearization:** Graph → coherent narrative via topological sort
-
-**Start here:** `docs/PHASE_3_NEXT.md`
-
-## Model Strategy
-
-**Current (all Sonnet 4.5):**
-- Debate agents: Sonnet (need quality, nuance)
-- Observers: Sonnet (Haiku had timeout issues)
-- Summaries: Sonnet
-
-**Future optimization:**
-- Try Haiku again for summaries when stable
-- Opus for difficult passages or final synthesis
-- Consider cost/speed tradeoffs
+**Diversity metrics:** 92.8% average pairwise distance
 
 ## Design Decisions
 
-### Context Retrieval Strategy (Phase 3)
+### Context Retrieval
 
-Two competing approaches:
-
-**Option 1: Vector DB / Embeddings**
-- Compute embeddings for each ArgumentNode
-- Similarity search for relevant context
-- Classic RAG approach
-
-**Option 2: Full Backlog in Context**
-- Modern LLMs have long context (200K tokens)
-- Just include everything for reasonable corpus sizes
-- Simpler, no embedding infrastructure
-
-**Current recommendation:** Start with Option 2 (full context) since:
-- Simpler to implement
+**Current approach:** Full backlog in context
+- Modern LLMs have 200K+ token windows
 - No embedding infrastructure needed
-- Works for 10-100 passages easily
-- Can add embeddings later if needed
+- Works perfectly for 10-100 passages
+- Can add vector DB later if corpus grows
 
-See `docs/DESIGN_DECISIONS.md` for full discussion.
+### Node Boundary Detection
+
+**Four methods:**
+1. Explicit completion markers ("we agree...", "fundamental disagreement...")
+2. Q&A completion (branch question answered)
+3. Repetition detection (circular arguments)
+4. Max turns fallback
+
+### Model Strategy
+
+**Current (all Sonnet 4.5):**
+- Debate agents: Sonnet (need quality, nuance)
+- Node generation: Sonnet (metadata extraction)
+- Observers: Sonnet (high temp for diversity)
+- Summaries: Sonnet (consistent compression)
+
+**Cost per session:** ~$0.20-0.50 depending on passage complexity
+
+See `docs/DESIGN_DECISIONS.md` for full rationale.
+
+## Development
+
+### Running Tests
+
+```bash
+cd src
+python test_e2e.py  # End-to-end integration test
+```
+
+### Key Files to Understand
+
+1. **session.py** - Main orchestrator, start here
+2. **debate_graph.py** - Core data structures
+3. **dialectic_poc.py** - Agents, debates, logging
+4. **node_factory.py** - How debates become nodes
+5. **edge_detection.py** - How relationships are found
 
 ## Contributing
 
-This is a research prototype. Key areas for exploration:
+Research areas for exploration:
 
-1. **Observer generation:** Can we get even more diversity? Different generation strategies?
-2. **Node boundary detection:** When does a debate become semantically complete?
-3. **Edge detection:** Automatic relationship identification between ideas
-4. **Linearization:** How to present graphs as readable narratives?
+1. **Observer generation:** Alternative diversity metrics, domain-specific observers
+2. **Node detection:** Better semantic completion signals
+3. **Edge detection:** More sophisticated relationship identification
+4. **Linearization:** Alternative narrative strategies (thematic, chronological, etc.)
+5. **Context retrieval:** When to switch from full backlog to embeddings
 
 ## License
 
-[Your license here]
+MIT License (see LICENSE file)
 
 ## Credits
 
 Built with:
 - [simonw/llm](https://github.com/simonw/llm) - CLI interface to LLMs
 - ElectronHub - Multi-model API proxy
-- Claude Sonnet 4.5 - Debate generation and meta-analysis
+- Claude Sonnet 4.5 - Debate generation and analysis
 
 ---
 
-**Last updated:** 2025-11-15
-**Version:** 0.3.0 (Phase 2 complete, Phase 3 planned)
+**Version:** 1.0.0
+**Last updated:** 2025-11-16
+**Status:** Production-ready
