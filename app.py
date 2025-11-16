@@ -164,6 +164,18 @@ else:
     # Manual agent configuration
     st.sidebar.markdown("*Customize the debate agents below:*")
 
+# Model selection (for both auto and manual)
+st.sidebar.subheader("Model Configuration")
+st.session_state.debate_model = st.sidebar.text_input(
+    "Debate model:",
+    value=st.session_state.debate_model,
+    help="Model ID for agent responses (e.g., electronhub/claude-sonnet-4-5-20250929)",
+    key="sidebar_model_input"
+)
+
+if not use_auto_agents:
+    pass  # Continue with manual agent config below
+
 if not use_auto_agents:
     with st.sidebar.expander("🔍 The Literalist", expanded=False):
         lit_stance = st.text_area(
@@ -281,6 +293,7 @@ if st.sidebar.button("➕ Create New Session"):
     # Will be created when debate starts with auto-generated name
     st.session_state.session = None
     st.session_state.current_node = None
+    st.session_state.agents_confirmed = False
 
     if not use_auto_agents:
         # Create manual agents
@@ -290,6 +303,8 @@ if st.sidebar.button("➕ Create New Session"):
             Agent("The Structuralist", str_stance, str_focus)
         ]
         st.session_state.agents = agents
+        # Manual agents are pre-confirmed (user already configured them)
+        st.session_state.agents_confirmed = True
     else:
         # Will generate agents from passage when debate starts
         st.session_state.agents = None
@@ -303,6 +318,10 @@ if 'current_debate_turns' not in st.session_state:
     st.session_state.current_debate_turns = []
 if 'agents' not in st.session_state:
     st.session_state.agents = None
+if 'agents_confirmed' not in st.session_state:
+    st.session_state.agents_confirmed = False
+if 'debate_model' not in st.session_state:
+    st.session_state.debate_model = "electronhub/claude-sonnet-4-5-20250929"
 
 # Main area: Tabs
 tab1, tab2, tab3 = st.tabs(["💬 Debate Chat", "🕸️ Graph", "📖 Narrative"])
@@ -336,9 +355,7 @@ with tab1:
             key="passage_input"
         )
 
-        if st.button("🚀 Start Main Debate", type="primary", disabled=not passage, use_container_width=True):
-            st.session_state.debate_running = True
-
+        if st.button("🚀 Prepare Debate", type="primary", disabled=not passage, use_container_width=True):
             # Add user passage to chat
             st.session_state.chat_history.append({
                 'role': 'user',
@@ -358,22 +375,97 @@ with tab1:
             if st.session_state.agents is None:
                 agents = generate_agent_ensemble(passage, num_agents=num_auto_agents, verbose=False)
                 st.session_state.agents = agents
-                agent_names = ', '.join([a.name for a in agents])
+
+            # Store passage for later use
+            st.session_state.pending_passage = passage
+
+            # Rerun to show agent confirmation
+            st.rerun()
+
+    # Agent confirmation UI (show if agents exist but not confirmed)
+    if st.session_state.agents and not st.session_state.agents_confirmed and not st.session_state.debate_running:
+        st.divider()
+        st.subheader("🤖 Review & Configure Agents")
+
+        # Model selection
+        st.session_state.debate_model = st.text_input(
+            "Model for debate:",
+            value=st.session_state.debate_model,
+            help="Enter model ID (e.g., electronhub/claude-sonnet-4-5-20250929, electronhub/gemini-2.5-pro)",
+            key="model_input"
+        )
+
+        st.markdown("**Generated Agents:**")
+
+        # Editable agent fields
+        edited_agents = []
+        for i, agent in enumerate(st.session_state.agents):
+            with st.expander(f"✏️ {agent.name}", expanded=True):
+                col1, col2 = st.columns([1, 2])
+                with col1:
+                    name = st.text_input(
+                        "Name:",
+                        value=agent.name,
+                        key=f"agent_name_{i}"
+                    )
+                with col2:
+                    focus = st.text_input(
+                        "Focus:",
+                        value=agent.focus,
+                        key=f"agent_focus_{i}"
+                    )
+
+                stance = st.text_area(
+                    "Stance:",
+                    value=agent.stance,
+                    height=100,
+                    key=f"agent_stance_{i}"
+                )
+
+                # Update agent with edited values
+                from dialectic_poc import Agent
+                edited_agents.append(Agent(name, stance, focus))
+
+        # Action buttons
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            if st.button("🔄 Regenerate Agents", use_container_width=True):
+                # Clear agents to trigger regeneration
+                st.session_state.agents = None
+                st.rerun()
+
+        with col2:
+            if st.button("❌ Cancel", use_container_width=True):
+                # Clear everything and start over
+                st.session_state.agents = None
+                st.session_state.chat_history = []
+                st.session_state.session = None
+                if 'pending_passage' in st.session_state:
+                    del st.session_state.pending_passage
+                st.rerun()
+
+        with col3:
+            if st.button("✅ Start Debate", type="primary", use_container_width=True):
+                # Update agents with edited values
+                st.session_state.agents = edited_agents
+                st.session_state.agents_confirmed = True
+
+                # Add system messages
+                agent_names = ', '.join([a.name for a in edited_agents])
                 st.session_state.chat_history.append({
                     'role': 'system',
-                    'content': f"🤖 Generated agents: **{agent_names}**"
+                    'content': f"🤖 Agents ready: **{agent_names}**"
                 })
-            else:
-                agents = st.session_state.agents
+                st.session_state.chat_history.append({
+                    'role': 'system',
+                    'content': f"🎭 Starting debate ({max_rounds} rounds) with model: **{st.session_state.debate_model}**"
+                })
 
-            # Add system message for debate start
-            st.session_state.chat_history.append({
-                'role': 'system',
-                'content': f"🎭 Starting main debate ({max_rounds} rounds)..."
-            })
+                # Start the debate
+                st.session_state.debate_running = True
+                st.rerun()
 
-            # Rerun to show setup messages
-            st.rerun()
     else:
         # Show a button to start a new debate after current one completes
         if not st.session_state.debate_running and len(st.session_state.chat_history) > 0:
@@ -383,8 +475,11 @@ with tab1:
                 st.session_state.chat_history = []
                 st.session_state.session = None
                 st.session_state.agents = None
+                st.session_state.agents_confirmed = False
                 if 'debate_state' in st.session_state:
                     del st.session_state.debate_state
+                if 'pending_passage' in st.session_state:
+                    del st.session_state.pending_passage
                 st.rerun()
 
     # Check if debate needs to continue (progressive execution)
@@ -452,9 +547,14 @@ with tab1:
                     ])
                     user_prompt = f"Previous discussion:\n{recent_turns}\n\nYour response:"
 
-                # Make LLM call
+                # Make LLM call with selected model
                 from dialectic_poc import llm_call, DebateTurn
-                response = llm_call(system_prompt, user_prompt, temperature=0.7)
+                response = llm_call(
+                    system_prompt,
+                    user_prompt,
+                    temperature=0.7,
+                    model=st.session_state.debate_model
+                )
 
                 # Create turn
                 turn = DebateTurn(agent.name, response, state['round'])
