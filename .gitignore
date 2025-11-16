@@ -45,6 +45,7 @@ data/
 !README.md
 !QUICKSTART.md
 !ARCHITECTURE.md
+!CLAUDE.md
 !docs/**/*.md
 !examples/**/*.md
 
