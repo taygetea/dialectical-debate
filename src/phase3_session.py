@@ -24,6 +24,7 @@ from phase3_dag import DebateDAG, ArgumentNode, NodeType, Edge, EdgeType
 from phase3_nodes import NodeCreationDetector, NodeFactory
 from phase3_similarity import ContextRetriever
 from phase3_edges import EdgeDetector
+from phase3_linearize import LinearizationEngine
 
 
 class DebateSession:
@@ -60,6 +61,7 @@ class DebateSession:
         else:
             print(f"Creating new DAG for session '{session_name}'")
             self.dag = DebateDAG()
+            self.dag.metadata['session_name'] = session_name
 
         # Initialize components
         self.retriever = ContextRetriever(self.dag, strategy="full")
@@ -248,6 +250,22 @@ class DebateSession:
                 f.write(summary)
 
         return summary
+
+    def export_narrative(self, output_path: Optional[Path] = None) -> str:
+        """
+        Export linearized narrative as markdown
+
+        Args:
+            output_path: Optional path to write narrative
+
+        Returns:
+            Markdown narrative
+        """
+
+        engine = LinearizationEngine(self.dag)
+        narrative = engine.render_markdown(output_path)
+
+        return narrative
 
     def _run_debate_with_context(self,
                                  passage: str,
