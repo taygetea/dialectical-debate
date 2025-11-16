@@ -652,7 +652,7 @@ with tab1:
         # Initialize debate state if needed
         if 'debate_state' not in st.session_state:
             st.session_state.debate_state = {
-                'passage': passage,
+                'passage': st.session_state.pending_passage,
                 'round': 1,
                 'agent_idx': 0,
                 'transcript': [],
