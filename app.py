@@ -15,9 +15,10 @@ import json
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from session import DebateSession
-from dialectic_poc import Agent, Logger
+from dialectic_poc import Agent, Logger, Observer
 from debate_graph import NodeType, EdgeType
 from agent_generation import generate_agent_ensemble
+from phase2_observer_generation import generate_observer_ensemble
 import tempfile
 
 # Page configuration
@@ -163,6 +164,17 @@ st.sidebar.subheader("Debate Settings")
 max_rounds = st.sidebar.slider("Max Rounds (Main)", 2, 5, 3)
 branch_rounds = st.sidebar.slider("Max Rounds (Branch)", 1, 4, 2)
 
+# Auto-branching toggle
+auto_branch = st.sidebar.checkbox(
+    "🌿 Auto-detect and explore branch questions",
+    value=True,
+    help="After main debate, automatically generate an observer to identify tensions and run a branch debate"
+)
+
+if auto_branch:
+    num_observers = st.sidebar.slider("Number of observers", 1, 3, 1,
+                                      help="Generate multiple observers to explore different branch angles")
+
 # Session management
 st.sidebar.subheader("Session Management")
 session_name = st.sidebar.text_input(
@@ -235,9 +247,64 @@ with tab1:
                     )
 
                     st.session_state.current_node = node
-                    st.session_state.debate_running = False
 
-                st.success(f"✅ Debate complete! Created node: {node.topic[:80]}...")
+                # Auto-branch if enabled
+                if auto_branch:
+                    with st.spinner(f"Generating {num_observers} observer(s) to identify branch questions..."):
+                        # Generate observers
+                        observers_data = generate_observer_ensemble(
+                            passage,
+                            num_perspectives=num_observers,
+                            verbose=False
+                        )
+
+                        # Convert to Observer objects
+                        observers = [
+                            Observer(
+                                name=obs['name'],
+                                bias=obs['bias'],
+                                focus=obs['focus'],
+                                blind_spots=obs['blind_spots'],
+                                example_questions=obs.get('example_questions', []),
+                                anti_examples=obs.get('anti_examples', [])
+                            )
+                            for obs in observers_data
+                        ]
+
+                    # Run branch debates for each observer
+                    for i, observer in enumerate(observers, 1):
+                        with st.spinner(f"Observer {i}/{num_observers} ({observer.name}) identifying branch..."):
+                            # Get transcript text for observer
+                            transcript_text = "\n\n".join([
+                                f"**{turn['agent_name']}** (Round {turn['round_num']}):\n{turn['content']}"
+                                for turn in node.turns_data
+                            ])
+
+                            # Observer identifies branch question
+                            branch_question = observer.identify_branch(transcript_text, passage)
+
+                        st.info(f"🔍 {observer.name} asks: {branch_question}")
+
+                        with st.spinner(f"Running branch debate {i}/{num_observers}..."):
+                            # Create new logger for branch
+                            with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+                                branch_log_path = f.name
+
+                            branch_logger = Logger(branch_log_path)
+
+                            # Run branch debate
+                            branch_node = st.session_state.session.process_branch(
+                                branch_question=branch_question,
+                                parent_node_id=node.node_id,
+                                agents=agents,
+                                logger=branch_logger,
+                                max_rounds=branch_rounds
+                            )
+
+                            st.success(f"✅ Branch {i} complete: {branch_node.topic[:60]}...")
+
+                st.session_state.debate_running = False
+                st.success(f"✅ All debates complete! Main node + {num_observers if auto_branch else 0} branch(es)")
                 st.rerun()
 
     with col2:
