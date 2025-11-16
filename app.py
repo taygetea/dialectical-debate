@@ -301,6 +301,8 @@ if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
 if 'current_debate_turns' not in st.session_state:
     st.session_state.current_debate_turns = []
+if 'agents' not in st.session_state:
+    st.session_state.agents = None
 
 # Main area: Tabs
 tab1, tab2, tab3 = st.tabs(["💬 Debate Chat", "🕸️ Graph", "📖 Narrative"])
