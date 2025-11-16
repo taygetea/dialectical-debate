@@ -89,8 +89,8 @@ class DebateSession:
             The created ArgumentNode
         """
 
-        logger.log_header(f"PROCESSING PASSAGE (with context from {len(self.dag.nodes)} prior nodes)")
-        logger.log_passage(passage)
+        logger.log_section(f"PROCESSING PASSAGE (with context from {len(self.dag.nodes)} prior nodes)")
+        logger.log(f"\nPassage:\n{passage}\n")
 
         # 1. Get relevant context from past debates
         context_nodes = self.retriever.get_relevant_context(passage)
@@ -98,7 +98,8 @@ class DebateSession:
 
         if context_nodes:
             context_summary = self.retriever.get_context_summary(context_nodes)
-            logger.log_section("Context Retrieved", context_summary)
+            logger.log_subsection("Context Retrieved")
+            logger.log(context_summary)
 
         # 2. Run debate with context-enhanced prompts
         transcript = self._run_debate_with_context(
@@ -110,7 +111,8 @@ class DebateSession:
         )
 
         # 3. Create node from transcript
-        logger.log_section("Creating ArgumentNode", "Analyzing debate transcript...")
+        logger.log_subsection("Creating ArgumentNode")
+        logger.log("Analyzing debate transcript...")
 
         node = NodeFactory.create_node_from_transcript(
             node_type=NodeType.EXPLORATION,  # Default for main debates
@@ -121,7 +123,8 @@ class DebateSession:
 
         # 4. Add to DAG
         self.dag.add_node(node)
-        logger.log_section("Node Created", f"ID: {node.node_id}\nType: {node.node_type.value}\nTopic: {node.topic}")
+        logger.log_subsection("Node Created")
+        logger.log(f"ID: {node.node_id}\nType: {node.node_type.value}\nTopic: {node.topic}")
 
         # 5. Detect and add edges
         new_edges = self.edge_detector._detect_edges_for_node(node)
@@ -129,7 +132,8 @@ class DebateSession:
             self.dag.add_edge(edge)
 
         if new_edges:
-            logger.log_section("Edges Detected", f"Found {len(new_edges)} relationship(s)")
+            logger.log_subsection("Edges Detected")
+            logger.log(f"Found {len(new_edges)} relationship(s)")
             for edge in new_edges:
                 logger.log(f"  {edge.edge_type.value}: {edge.description}")
 
@@ -161,7 +165,7 @@ class DebateSession:
             The created ArgumentNode (branch)
         """
 
-        logger.log_header(f"BRANCH DEBATE: {branch_question}")
+        logger.log_section(f"BRANCH DEBATE: {branch_question}")
 
         # Verify parent exists
         parent_node = self.dag.get_node(parent_node_id)
@@ -172,7 +176,8 @@ class DebateSession:
         context_nodes = self.retriever.get_relevant_context(branch_question)
         context_text = self._format_branch_context(parent_node, context_nodes)
 
-        logger.log_section("Parent Node", parent_node.topic)
+        logger.log_subsection("Parent Node")
+        logger.log(parent_node.topic)
 
         # 2. Run branch debate
         transcript = self._run_debate_with_context(
@@ -193,7 +198,8 @@ class DebateSession:
         if not node_type:
             node_type = NodeType.EXPLORATION  # Default
 
-        logger.log_section("Branch Resolution", f"Detected type: {node_type.value}")
+        logger.log_subsection("Branch Resolution")
+        logger.log(f"Detected type: {node_type.value}")
 
         # 4. Create node
         node = NodeFactory.create_node_from_transcript(
@@ -216,7 +222,8 @@ class DebateSession:
         )
         self.dag.add_edge(branch_edge)
 
-        logger.log_section("Branch Created", f"ID: {node.node_id}\nBranches from: {parent_node.topic[:50]}...")
+        logger.log_subsection("Branch Created")
+        logger.log(f"ID: {node.node_id}\nBranches from: {parent_node.topic[:50]}...")
 
         # 7. Detect other edges
         other_edges = self.edge_detector._detect_edges_for_node(node)
@@ -292,7 +299,7 @@ class DebateSession:
         transcript = []
 
         for round_num in range(1, max_rounds + 1):
-            logger.log_round(round_num)
+            logger.log_subsection(f"Round {round_num}")
 
             for agent in agents:
                 # Build system prompt with context
@@ -337,7 +344,8 @@ class DebateSession:
                     branch_question=passage
                 )
                 if is_complete:
-                    logger.log_section("Early Completion", "Debate reached resolution")
+                    logger.log_subsection("Early Completion")
+                    logger.log("Debate reached resolution")
                     break
 
         return transcript
