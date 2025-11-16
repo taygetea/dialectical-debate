@@ -152,14 +152,19 @@ class Edge:
 
 
 class DebateDAG:
-    """Directed Acyclic Graph storing ArgumentNodes and Edges"""
+    """Directed Acyclic Graph storing ArgumentNodes, Edges, and Stubs
+
+    Phase 4 enhancement: Now tracks unexplored tensions as stubs that can
+    be revisited when context makes them relevant.
+    """
 
     def __init__(self):
         self.nodes: Dict[str, ArgumentNode] = {}
         self.edges: List[Edge] = []
+        self.stubs: List = []  # List[BranchStub], imported on demand to avoid circular deps
         self.metadata: Dict = {
             'created_at': datetime.now().isoformat(),
-            'version': '0.3.0'
+            'version': '0.4.0'  # Bumped for Phase 4
         }
 
     def add_node(self, node: ArgumentNode) -> None:
@@ -224,12 +229,37 @@ class DebateDAG:
         """Get all nodes sorted by creation time"""
         return sorted(self.nodes.values(), key=lambda n: n.created_at)
 
+    def get_active_stubs(self) -> List:
+        """Get stubs that are still unexplored
+
+        Returns:
+            List of BranchStub objects with status="stub"
+        """
+        return [s for s in self.stubs if s.status == "stub"]
+
+    def get_explored_stubs(self) -> List:
+        """Get stubs that were later explored
+
+        Returns:
+            List of BranchStub objects with status="explored"
+        """
+        return [s for s in self.stubs if s.status == "explored"]
+
+    def get_superseded_stubs(self) -> List:
+        """Get stubs that were superseded by other nodes
+
+        Returns:
+            List of BranchStub objects with status="superseded"
+        """
+        return [s for s in self.stubs if s.status == "superseded"]
+
     def save(self, path: Path) -> None:
-        """Save graph to JSON file"""
+        """Save graph to JSON file (including stubs)"""
         data = {
             'metadata': self.metadata,
             'nodes': [node.to_dict() for node in self.nodes.values()],
-            'edges': [edge.to_dict() for edge in self.edges]
+            'edges': [edge.to_dict() for edge in self.edges],
+            'stubs': [stub.to_dict() for stub in self.stubs]  # Phase 4 addition
         }
 
         with open(path, 'w') as f:
@@ -237,7 +267,7 @@ class DebateDAG:
 
     @classmethod
     def load(cls, path: Path) -> 'DebateDAG':
-        """Load graph from JSON file"""
+        """Load graph from JSON file (including stubs)"""
         with open(path, 'r') as f:
             data = json.load(f)
 
@@ -254,10 +284,17 @@ class DebateDAG:
             edge = Edge.from_dict(edge_data)
             dag.edges.append(edge)
 
+        # Load stubs (Phase 4)
+        if 'stubs' in data:
+            from branch_stub import BranchStub  # Import here to avoid circular deps
+            for stub_data in data['stubs']:
+                stub = BranchStub.from_dict(stub_data)
+                dag.stubs.append(stub)
+
         return dag
 
     def __repr__(self) -> str:
-        return f"DebateDAG(nodes={len(self.nodes)}, edges={len(self.edges)})"
+        return f"DebateDAG(nodes={len(self.nodes)}, edges={len(self.edges)}, stubs={len(self.stubs)})"
 
     def summary(self) -> str:
         """Generate a text summary of the graph"""
