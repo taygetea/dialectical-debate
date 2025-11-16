@@ -1,0 +1,422 @@
+#!/usr/bin/env python3
+"""
+Streamlit App for Dialectical Debate System
+
+Interactive UI for running debates, viewing graphs, and exploring narratives.
+"""
+
+import streamlit as st
+import sys
+from pathlib import Path
+from datetime import datetime
+import json
+
+# Add src to path
+sys.path.insert(0, str(Path(__file__).parent / "src"))
+
+from session import DebateSession
+from dialectic_poc import Agent, Logger
+from debate_graph import NodeType, EdgeType
+import tempfile
+
+# Page configuration
+st.set_page_config(
+    page_title="Dialectical Debate System",
+    page_icon="🎭",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Custom CSS for chat bubbles
+st.markdown("""
+<style>
+.chat-message {
+    padding: 1rem;
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+    display: flex;
+    flex-direction: column;
+}
+.literalist {
+    background-color: #e3f2fd;
+    border-left: 4px solid #1976d2;
+}
+.symbolist {
+    background-color: #f3e5f5;
+    border-left: 4px solid #7b1fa2;
+}
+.structuralist {
+    background-color: #e8f5e9;
+    border-left: 4px solid #388e3c;
+}
+.agent-name {
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+}
+.round-badge {
+    background-color: #666;
+    color: white;
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.3rem;
+    font-size: 0.8rem;
+    display: inline-block;
+    margin-left: 0.5rem;
+}
+.node-card {
+    border: 1px solid #ddd;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+.node-header {
+    font-weight: bold;
+    color: #1976d2;
+    margin-bottom: 0.5rem;
+}
+.tag {
+    background-color: #e0e0e0;
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.3rem;
+    font-size: 0.8rem;
+    margin-right: 0.3rem;
+    display: inline-block;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# Initialize session state
+if 'session' not in st.session_state:
+    st.session_state.session = None
+if 'current_node' not in st.session_state:
+    st.session_state.current_node = None
+if 'debate_running' not in st.session_state:
+    st.session_state.debate_running = False
+
+# Sidebar: Configuration
+st.sidebar.title("⚙️ Configuration")
+
+# Agent customization
+st.sidebar.subheader("Debate Agents")
+
+with st.sidebar.expander("🔍 The Literalist", expanded=False):
+    lit_stance = st.text_area(
+        "Stance",
+        "You interpret text literally and factually, focusing on what is explicitly stated.",
+        key="lit_stance"
+    )
+    lit_focus = st.text_input(
+        "Focus",
+        "Concrete claims and logical consistency",
+        key="lit_focus"
+    )
+
+with st.sidebar.expander("🌟 The Symbolist", expanded=False):
+    sym_stance = st.text_area(
+        "Stance",
+        "You see deeper symbolic and archetypal meanings beneath the surface.",
+        key="sym_stance"
+    )
+    sym_focus = st.text_input(
+        "Focus",
+        "Metaphorical significance and universal patterns",
+        key="sym_focus"
+    )
+
+with st.sidebar.expander("🏛️ The Structuralist", expanded=False):
+    str_stance = st.text_area(
+        "Stance",
+        "You analyze underlying structures, patterns, and formal relationships.",
+        key="str_stance"
+    )
+    str_focus = st.text_input(
+        "Focus",
+        "Systems, frameworks, and organizational principles",
+        key="str_focus"
+    )
+
+# Debate settings
+st.sidebar.subheader("Debate Settings")
+max_rounds = st.sidebar.slider("Max Rounds (Main)", 2, 5, 3)
+branch_rounds = st.sidebar.slider("Max Rounds (Branch)", 1, 4, 2)
+
+# Session management
+st.sidebar.subheader("Session Management")
+session_name = st.sidebar.text_input(
+    "Session Name",
+    f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+    key="session_name"
+)
+
+if st.sidebar.button("📁 New Session"):
+    agents = [
+        Agent("The Literalist", lit_stance, lit_focus),
+        Agent("The Symbolist", sym_stance, sym_focus),
+        Agent("The Structuralist", str_stance, str_focus)
+    ]
+    st.session_state.session = DebateSession(session_name)
+    st.session_state.agents = agents
+    st.sidebar.success(f"Created session: {session_name}")
+
+# Main area: Tabs
+tab1, tab2, tab3, tab4 = st.tabs(["📝 Input", "💬 Debate", "🕸️ Graph", "📖 Narrative"])
+
+# TAB 1: Input
+with tab1:
+    st.header("Input Passage")
+
+    passage = st.text_area(
+        "Enter a passage to debate:",
+        height=200,
+        placeholder="Enter philosophical text, quotes, or any passage you want the agents to analyze..."
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("🚀 Start Main Debate", type="primary", disabled=not passage or st.session_state.debate_running):
+            if st.session_state.session is None:
+                st.error("Please create a session first (sidebar)")
+            else:
+                st.session_state.debate_running = True
+
+                with st.spinner("Running debate..."):
+                    # Create temporary logger
+                    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+                        log_path = f.name
+
+                    logger = Logger(log_path)
+
+                    # Run debate
+                    node = st.session_state.session.process_passage(
+                        passage=passage,
+                        agents=st.session_state.agents,
+                        logger=logger,
+                        max_rounds=max_rounds
+                    )
+
+                    st.session_state.current_node = node
+                    st.session_state.debate_running = False
+
+                st.success(f"✅ Debate complete! Created node: {node.topic[:80]}...")
+                st.rerun()
+
+    with col2:
+        branch_question = st.text_input("Branch question (optional):")
+        if st.button("🌿 Start Branch Debate", disabled=not branch_question or st.session_state.current_node is None):
+            if st.session_state.session is None:
+                st.error("Please create a session first")
+            else:
+                with st.spinner("Running branch debate..."):
+                    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+                        log_path = f.name
+
+                    logger = Logger(log_path)
+
+                    node = st.session_state.session.process_branch(
+                        branch_question=branch_question,
+                        parent_node_id=st.session_state.current_node.node_id,
+                        agents=st.session_state.agents,
+                        logger=logger,
+                        max_rounds=branch_rounds
+                    )
+
+                    st.session_state.current_node = node
+
+                st.success(f"✅ Branch complete! Created node: {node.topic[:80]}...")
+                st.rerun()
+
+    # Show current session stats
+    if st.session_state.session:
+        st.divider()
+        st.subheader("Current Session")
+        stats = st.session_state.session.get_stats()
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Nodes", stats['total_nodes'])
+        col2.metric("Total Edges", stats['total_edges'])
+        col3.metric("Session", stats['session_name'])
+
+# TAB 2: Debate View (Chat Bubbles)
+with tab2:
+    st.header("Debate Transcript")
+
+    if st.session_state.session and st.session_state.session.dag.nodes:
+        # Node selector
+        nodes = st.session_state.session.dag.get_all_nodes()
+        node_options = {f"{i+1}. {node.topic[:60]}...": node for i, node in enumerate(nodes)}
+
+        selected_label = st.selectbox("Select debate to view:", list(node_options.keys()))
+        selected_node = node_options[selected_label]
+
+        # Display node metadata
+        st.markdown(f"**Type:** {selected_node.node_type.value}")
+        st.markdown(f"**Tags:** {' '.join(['#' + tag for tag in sorted(selected_node.theme_tags)])}")
+
+        if selected_node.passage:
+            with st.expander("📄 Original Passage"):
+                st.markdown(selected_node.passage)
+
+        if selected_node.branch_question:
+            st.info(f"**Branch Question:** {selected_node.branch_question}")
+
+        st.divider()
+
+        # Chat bubbles
+        if selected_node.turns_data:
+            for turn in selected_node.turns_data:
+                agent_name = turn['agent_name'].lower().replace('the ', '')
+
+                st.markdown(f"""
+                <div class="chat-message {agent_name}">
+                    <div class="agent-name">
+                        {turn['agent_name']}
+                        <span class="round-badge">Round {turn['round_num']}</span>
+                    </div>
+                    <div>{turn['content']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("No transcript available for this node")
+
+        # Show resolution
+        st.divider()
+        st.subheader("Resolution")
+        st.markdown(selected_node.resolution)
+
+        if selected_node.key_claims:
+            st.subheader("Key Claims")
+            for claim in selected_node.key_claims:
+                st.markdown(f"- {claim}")
+    else:
+        st.info("No debates yet. Create a session and run a debate from the Input tab.")
+
+# TAB 3: Graph View
+with tab3:
+    st.header("Debate Graph (DAG)")
+
+    if st.session_state.session and st.session_state.session.dag.nodes:
+        # Try to visualize graph
+        try:
+            import networkx as nx
+            import matplotlib.pyplot as plt
+            from io import BytesIO
+
+            # Create networkx graph
+            G = nx.DiGraph()
+
+            # Add nodes
+            for node_id, node in st.session_state.session.dag.nodes.items():
+                G.add_node(
+                    node_id,
+                    label=node.topic[:40] + "...",
+                    type=node.node_type.value
+                )
+
+            # Add edges
+            edge_colors = []
+            edge_labels = {}
+            for edge in st.session_state.session.dag.edges:
+                G.add_edge(edge.from_node_id, edge.to_node_id)
+                edge_labels[(edge.from_node_id, edge.to_node_id)] = edge.edge_type.value
+
+                # Color by type
+                if edge.edge_type == EdgeType.BRANCHES_FROM:
+                    edge_colors.append('blue')
+                elif edge.edge_type == EdgeType.CONTRADICTS:
+                    edge_colors.append('red')
+                else:
+                    edge_colors.append('green')
+
+            # Layout
+            pos = nx.spring_layout(G, k=2, iterations=50)
+
+            # Draw
+            fig, ax = plt.subplots(figsize=(12, 8))
+
+            # Node colors by type
+            node_colors = []
+            for node_id in G.nodes():
+                node = st.session_state.session.dag.get_node(node_id)
+                if node.node_type == NodeType.SYNTHESIS:
+                    node_colors.append('lightgreen')
+                elif node.node_type == NodeType.IMPASSE:
+                    node_colors.append('lightcoral')
+                elif node.node_type == NodeType.EXPLORATION:
+                    node_colors.append('lightblue')
+                else:
+                    node_colors.append('lightgray')
+
+            nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=2000, alpha=0.9, ax=ax)
+            nx.draw_networkx_edges(G, pos, edge_color=edge_colors, arrows=True,
+                                  arrowsize=20, width=2, alpha=0.6, ax=ax)
+
+            # Labels
+            labels = {node_id: f"{i+1}" for i, node_id in enumerate(G.nodes())}
+            nx.draw_networkx_labels(G, pos, labels, font_size=12, font_weight='bold', ax=ax)
+
+            plt.axis('off')
+            plt.tight_layout()
+
+            st.pyplot(fig)
+
+            # Legend
+            st.markdown("""
+            **Node Colors:**
+            - 🟢 Green: Synthesis (agreement reached)
+            - 🔴 Red: Impasse (irreconcilable disagreement)
+            - 🔵 Blue: Exploration (open-ended investigation)
+
+            **Edge Colors:**
+            - Blue: Branches from
+            - Red: Contradicts
+            - Green: Elaborates
+            """)
+
+        except ImportError:
+            st.warning("Graph visualization requires networkx and matplotlib. Install with: `pip install networkx matplotlib`")
+
+            # Fallback: text representation
+            st.subheader("Nodes")
+            for i, node in enumerate(st.session_state.session.dag.get_all_nodes(), 1):
+                st.markdown(f"**{i}.** [{node.node_type.value}] {node.topic}")
+
+            st.subheader("Edges")
+            for edge in st.session_state.session.dag.edges:
+                from_node = st.session_state.session.dag.get_node(edge.from_node_id)
+                to_node = st.session_state.session.dag.get_node(edge.to_node_id)
+                st.markdown(f"- {from_node.topic[:30]}... **{edge.edge_type.value}** → {to_node.topic[:30]}...")
+    else:
+        st.info("No graph yet. Create a session and run debates to build the graph.")
+
+# TAB 4: Narrative View
+with tab4:
+    st.header("Linearized Narrative")
+
+    if st.session_state.session and st.session_state.session.dag.nodes:
+        # Generate narrative
+        with st.spinner("Generating narrative..."):
+            narrative = st.session_state.session.export_narrative()
+
+        # Display with markdown
+        st.markdown(narrative)
+
+        # Download button
+        st.download_button(
+            label="📥 Download Narrative",
+            data=narrative,
+            file_name=f"{st.session_state.session.session_name}_narrative.md",
+            mime="text/markdown"
+        )
+    else:
+        st.info("No narrative yet. Create a session and run debates first.")
+
+# Footer
+st.sidebar.divider()
+st.sidebar.markdown("""
+### About
+Dialectical Debate System v1.0
+
+Multi-perspective debates that build knowledge graphs.
+
+[GitHub](https://github.com/taygetea/dialectical-debate)
+""")

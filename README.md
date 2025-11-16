@@ -37,7 +37,26 @@ llm keys set electronhub  # or your provider
 llm models default electronhub/claude-sonnet-4-5-20250929
 ```
 
-### Run Your First Session
+### Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### Run the Web UI (Recommended)
+
+```bash
+streamlit run app.py
+```
+
+This launches an interactive web interface where you can:
+- Enter passages and customize agents
+- Watch debates unfold in chat-bubble format
+- Visualize the knowledge graph
+- Export linearized narratives
+- Manage multiple sessions
+
+### Run from Command Line
 
 ```bash
 cd dialectical-debate/src
