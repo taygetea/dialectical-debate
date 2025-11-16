@@ -467,20 +467,116 @@ with tab1:
                 st.rerun()
 
     else:
-        # Show a button to start a new debate after current one completes
-        if not st.session_state.debate_running and len(st.session_state.chat_history) > 0:
+        # Show continuation options after debates complete
+        if not st.session_state.debate_running and len(st.session_state.chat_history) > 0 and st.session_state.session:
             st.divider()
-            if st.button("🔄 Start New Debate", use_container_width=True):
-                # Clear chat history and reset
-                st.session_state.chat_history = []
-                st.session_state.session = None
-                st.session_state.agents = None
-                st.session_state.agents_confirmed = False
-                if 'debate_state' in st.session_state:
-                    del st.session_state.debate_state
-                if 'pending_passage' in st.session_state:
-                    del st.session_state.pending_passage
-                st.rerun()
+            st.subheader("🎯 Continue Debate")
+
+            # Show available nodes
+            if st.session_state.session.dag.nodes:
+                nodes = st.session_state.session.dag.get_all_nodes()
+
+                # Node selector
+                node_labels = {
+                    f"Node {i+1} [{node.node_type.value.upper()}]: {node.topic[:60]}": node
+                    for i, node in enumerate(nodes)
+                }
+
+                selected_label = st.selectbox(
+                    "Select a node to continue from:",
+                    list(node_labels.keys()),
+                    key="continue_node_selector"
+                )
+                selected_node = node_labels[selected_label]
+
+                # Show node info
+                with st.expander("📄 View Node Details", expanded=False):
+                    st.markdown(f"**Type:** {selected_node.node_type.value}")
+                    st.markdown(f"**Concise:** {selected_node.concise_summary}")
+                    st.markdown(f"**Resolution:** {selected_node.resolution}")
+
+                # Generate continuation strategy button
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    if st.button("🎯 Generate Continuation Question", use_container_width=True):
+                        with st.spinner("Generating continuation strategy..."):
+                            strategy = generate_continuation_strategy(selected_node)
+                            st.session_state.continuation_strategy = strategy
+                            st.session_state.continuation_node_id = selected_node.node_id
+                            st.rerun()
+
+                with col2:
+                    if st.button("🔄 Start New Debate", use_container_width=True):
+                        # Clear chat history and reset
+                        st.session_state.chat_history = []
+                        st.session_state.session = None
+                        st.session_state.agents = None
+                        st.session_state.agents_confirmed = False
+                        if 'debate_state' in st.session_state:
+                            del st.session_state.debate_state
+                        if 'pending_passage' in st.session_state:
+                            del st.session_state.pending_passage
+                        if 'auto_branch_done' in st.session_state:
+                            del st.session_state.auto_branch_done
+                        st.rerun()
+
+                # Show continuation strategy if generated
+                if (hasattr(st.session_state, 'continuation_strategy') and
+                    hasattr(st.session_state, 'continuation_node_id') and
+                    st.session_state.continuation_node_id == selected_node.node_id):
+
+                    strategy = st.session_state.continuation_strategy
+
+                    st.divider()
+                    st.info(f"**Approach:** {strategy['approach_type']}")
+                    st.markdown(f"**Proposed Question:**\n> {strategy['question']}")
+                    st.markdown(f"**Rationale:** {strategy['rationale']}")
+
+                    # Edit and run
+                    edited_question = st.text_area(
+                        "Edit continuation question if needed:",
+                        value=strategy['question'],
+                        key="continuation_question_edit"
+                    )
+
+                    if st.button("▶️ Run Continuation Debate", type="primary", use_container_width=True):
+                        # Add to chat
+                        st.session_state.chat_history.append({
+                            'role': 'system',
+                            'content': f"🔄 Continuing from: **{selected_node.topic[:60]}...**"
+                        })
+                        st.session_state.chat_history.append({
+                            'role': 'system',
+                            'content': f"❓ Question: _{edited_question}_"
+                        })
+
+                        # Create logger
+                        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+                            log_path = f.name
+                        logger = Logger(log_path)
+
+                        # Run branch debate
+                        cont_node = st.session_state.session.process_branch(
+                            branch_question=edited_question,
+                            parent_node_id=selected_node.node_id,
+                            agents=st.session_state.agents,
+                            logger=logger,
+                            max_rounds=branch_rounds
+                        )
+
+                        st.session_state.chat_history.append({
+                            'role': 'system',
+                            'content': f"✅ Continuation complete: **{cont_node.topic[:60]}...**"
+                        })
+
+                        # Clear continuation state
+                        if hasattr(st.session_state, 'continuation_strategy'):
+                            delattr(st.session_state, 'continuation_strategy')
+                        if hasattr(st.session_state, 'continuation_node_id'):
+                            delattr(st.session_state, 'continuation_node_id')
+
+                        st.rerun()
 
     # Check if debate needs to continue (progressive execution)
     if st.session_state.debate_running and st.session_state.session:
@@ -521,6 +617,72 @@ with tab1:
                 'role': 'system',
                 'content': f"✅ Main debate complete! **{node.topic}**"
             })
+
+            # Check if auto-branching is enabled
+            if auto_branch and 'auto_branch_done' not in st.session_state:
+                st.session_state.auto_branch_done = True
+
+                # Add message about starting auto-branch
+                st.session_state.chat_history.append({
+                    'role': 'system',
+                    'content': f"🌿 Auto-branching enabled: generating {num_observers} observer(s)..."
+                })
+
+                # Generate observers
+                observers_data = generate_observer_ensemble(
+                    state['passage'],
+                    num_perspectives=num_observers,
+                    verbose=False
+                )
+
+                # Convert to Observer objects
+                observers = [
+                    Observer(
+                        name=obs['name'],
+                        bias=obs['bias'],
+                        focus=obs['focus'],
+                        blind_spots=obs['blind_spots'],
+                        example_questions=obs.get('example_questions', []),
+                        anti_examples=obs.get('anti_examples', [])
+                    )
+                    for obs in observers_data
+                ]
+
+                # Run branch debates for each observer
+                for i, observer in enumerate(observers, 1):
+                    # Get transcript text
+                    transcript_text = "\n\n".join([
+                        f"**{turn.agent_name}** (Round {turn.round_num}):\n{turn.content}"
+                        for turn in state['transcript']
+                    ])
+
+                    # Observer identifies branch question
+                    branch_question = observer.identify_branch(transcript_text, state['passage'])
+
+                    # Add to chat
+                    st.session_state.chat_history.append({
+                        'role': 'system',
+                        'content': f"🔍 **{observer.name}** asks: _{branch_question}_"
+                    })
+
+                    # Create logger
+                    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+                        branch_log_path = f.name
+                    branch_logger = Logger(branch_log_path)
+
+                    # Run branch debate
+                    branch_node = st.session_state.session.process_branch(
+                        branch_question=branch_question,
+                        parent_node_id=node.node_id,
+                        agents=agents,
+                        logger=branch_logger,
+                        max_rounds=branch_rounds
+                    )
+
+                    st.session_state.chat_history.append({
+                        'role': 'system',
+                        'content': f"✅ Branch {i} complete: **{branch_node.topic[:60]}...**"
+                    })
 
             # Cleanup
             st.session_state.debate_running = False
