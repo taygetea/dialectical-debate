@@ -667,20 +667,22 @@ with tab1:
             from node_factory import NodeFactory
 
             # Create node - different for main vs branch
-            if state['debate_type'] == 'branch':
-                node = NodeFactory.create_node_from_transcript(
-                    node_type=NodeType.EXPLORATION,
-                    transcript=state['transcript'],
-                    passage=None,
-                    branch_question=state['branch_question']
-                )
-            else:
-                node = NodeFactory.create_node_from_transcript(
-                    node_type=NodeType.EXPLORATION,
-                    transcript=state['transcript'],
-                    passage=state['passage'],
-                    branch_question=None
-                )
+            with st.status("🧠 Analyzing debate and generating summary...", expanded=True) as status:
+                if state['debate_type'] == 'branch':
+                    node = NodeFactory.create_node_from_transcript(
+                        node_type=NodeType.EXPLORATION,
+                        transcript=state['transcript'],
+                        passage=None,
+                        branch_question=state['branch_question']
+                    )
+                else:
+                    node = NodeFactory.create_node_from_transcript(
+                        node_type=NodeType.EXPLORATION,
+                        transcript=state['transcript'],
+                        passage=state['passage'],
+                        branch_question=None
+                    )
+                status.update(label="✅ Summary complete!", state="complete")
 
             # Add to DAG
             st.session_state.session.dag.add_node(node)
