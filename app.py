@@ -161,7 +161,7 @@ st.sidebar.subheader("Debate Agents")
 # Toggle for auto-generation
 use_auto_agents = st.sidebar.checkbox(
     "🤖 Auto-generate agents from passage",
-    value=False,
+    value=True,
     help="Generate debate agents specifically tuned to the passage using LLM"
 )
 
