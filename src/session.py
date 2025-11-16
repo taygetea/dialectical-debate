@@ -75,6 +75,134 @@ Output ONLY the name, nothing else."""
     return f"{name}_{timestamp}"
 
 
+def generate_continuation_strategy(node: ArgumentNode, temperature: float = 0.7) -> dict:
+    """
+    Generate a continuation strategy based on node type and content
+
+    Different node types need different continuation approaches:
+    - IMPASSE: Generate bridging question to resolve disagreement
+    - SYNTHESIS: Explore implications or applications
+    - EXPLORATION: Deepen investigation or identify sub-questions
+    - etc.
+
+    Args:
+        node: The ArgumentNode to continue from
+        temperature: Sampling temperature
+
+    Returns:
+        Dict with 'question', 'rationale', and 'approach_type'
+    """
+
+    # Build context from node
+    context = f"""Node Type: {node.node_type.value}
+Topic: {node.topic}
+Resolution: {node.resolution}
+Key Claims: {', '.join(node.key_claims[:3])}"""
+
+    if node.passage:
+        context += f"\nOriginal Passage: {node.passage}"
+    if node.branch_question:
+        context += f"\nBranch Question: {node.branch_question}"
+
+    # Type-specific system prompts
+    if node.node_type == NodeType.IMPASSE:
+        system_prompt = """You help resolve impasses in philosophical debates.
+
+When agents reach an impasse, the best continuation is often to:
+1. Identify the core disagreement
+2. Find a bridging question that reframes the tension
+3. Look for hidden assumptions causing the deadlock
+
+Generate a question that might help resolve or productively reframe the impasse.
+
+Output JSON:
+{
+  "question": "Your bridging question here",
+  "rationale": "Why this question might help resolve the impasse",
+  "approach_type": "resolution"
+}"""
+
+    elif node.node_type == NodeType.SYNTHESIS:
+        system_prompt = """You help explore implications of philosophical agreements.
+
+When agents reach synthesis, good continuations:
+1. Explore implications or consequences
+2. Test the synthesis with edge cases
+3. Apply the insight to related domains
+
+Generate a question that deepens or tests the synthesis.
+
+Output JSON:
+{
+  "question": "Your exploration question here",
+  "rationale": "Why this deepens the synthesis",
+  "approach_type": "implication"
+}"""
+
+    elif node.node_type == NodeType.EXPLORATION:
+        system_prompt = """You help deepen open-ended investigations.
+
+When a topic remains exploratory, good continuations:
+1. Identify the most promising sub-question
+2. Find a concrete case or example to ground the discussion
+3. Introduce a contrasting perspective not yet considered
+
+Generate a question that productively deepens the exploration.
+
+Output JSON:
+{
+  "question": "Your deepening question here",
+  "rationale": "Why this advances the investigation",
+  "approach_type": "deepening"
+}"""
+
+    else:  # QUESTION, LEMMA, CLARIFICATION
+        system_prompt = """You help extend philosophical discussions.
+
+Generate a natural follow-up question that:
+1. Builds on what was established
+2. Opens new relevant territory
+3. Maintains philosophical depth
+
+Output JSON:
+{
+  "question": "Your follow-up question here",
+  "rationale": "Why this is a natural next step",
+  "approach_type": "extension"
+}"""
+
+    user_prompt = f"""{context}
+
+Based on this debate node, generate a continuation strategy (JSON only):"""
+
+    response = llm_call(
+        system_prompt,
+        user_prompt,
+        temperature=temperature,
+        model="electronhub/claude-sonnet-4-5-20250929"
+    )
+
+    # Parse JSON
+    try:
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0].strip()
+        elif "```" in response:
+            response = response.split("```")[1].split("```")[0].strip()
+
+        import json
+        strategy = json.loads(response)
+        return strategy
+    except json.JSONDecodeError as e:
+        print(f"JSON parse error: {e}")
+        print(f"Response was: {response}")
+        # Fallback
+        return {
+            "question": f"What are the implications of this {node.node_type.value}?",
+            "rationale": "General follow-up question",
+            "approach_type": "extension"
+        }
+
+
 class DebateSession:
     """
     Orchestrates graph-building debates

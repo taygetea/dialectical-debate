@@ -49,6 +49,7 @@ class ArgumentNode:
     node_type: NodeType                   # Type of resolution
     topic: str                            # 1-2 sentence summary
     resolution: str                       # Paragraph summary of outcome
+    concise_summary: str = ""             # Ultra-short (5-10 words) for graph display
     passage: Optional[str] = None         # Original passage (if main debate)
     branch_question: Optional[str] = None # Question (if branch debate)
     theme_tags: Set[str] = field(default_factory=set)  # ["free-will", "causation"]
@@ -63,6 +64,7 @@ class ArgumentNode:
                node_type: NodeType,
                topic: str,
                resolution: str,
+               concise_summary: str = "",
                passage: Optional[str] = None,
                branch_question: Optional[str] = None,
                theme_tags: Optional[Set[str]] = None,
@@ -74,6 +76,7 @@ class ArgumentNode:
             node_type=node_type,
             topic=topic,
             resolution=resolution,
+            concise_summary=concise_summary,
             passage=passage,
             branch_question=branch_question,
             theme_tags=theme_tags or set(),
@@ -100,6 +103,7 @@ class ArgumentNode:
             node_type=NodeType(data['node_type']),
             topic=data['topic'],
             resolution=data['resolution'],
+            concise_summary=data.get('concise_summary', ''),
             passage=data.get('passage'),
             branch_question=data.get('branch_question'),
             theme_tags=set(data.get('theme_tags', [])),

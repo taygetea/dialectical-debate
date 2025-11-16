@@ -175,6 +175,9 @@ class NodeFactory:
             transcript_text, node_type, passage, branch_question
         )
 
+        # Generate concise summary (5-10 words for graph display)
+        concise_summary = NodeFactory._generate_concise_summary(topic, resolution)
+
         # Extract theme tags
         theme_tags = NodeFactory._extract_theme_tags(transcript_text, topic)
 
@@ -195,6 +198,7 @@ class NodeFactory:
             node_type=node_type,
             topic=topic,
             resolution=resolution,
+            concise_summary=concise_summary,
             passage=passage,
             branch_question=branch_question,
             theme_tags=theme_tags,
@@ -269,6 +273,42 @@ Paragraph summary:"""
         )
 
         return resolution.strip()
+
+    @staticmethod
+    def _generate_concise_summary(topic: str, resolution: str) -> str:
+        """Generate ultra-concise summary for graph display (5-10 words)"""
+
+        system_prompt = """You create ultra-concise summaries for graph node labels.
+
+Requirements:
+- 5-10 words MAXIMUM
+- Captures core essence at a glance
+- No filler words
+- Readable when wrapped across lines in a graph node
+
+Examples:
+- "Zarathustra's departure: literal vs symbolic transformation"
+- "Free will: determined by circumstances"
+- "Meaning emerges through structure, not chaos"
+- "Human knowledge: partial but real"
+- "Art: mirror or lamp for reality?"
+
+Output ONLY the concise summary, nothing else."""
+
+        user_prompt = f"""Topic: {topic}
+
+Resolution: {resolution}
+
+Generate ultra-concise summary (5-10 words):"""
+
+        summary = llm_call(
+            system_prompt,
+            user_prompt,
+            temperature=0.3,
+            model="electronhub/claude-sonnet-4-5-20250929"
+        )
+
+        return summary.strip()
 
     @staticmethod
     def _extract_theme_tags(transcript_text: str, topic: str) -> Set[str]:

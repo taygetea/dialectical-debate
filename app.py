@@ -14,7 +14,7 @@ import json
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from session import DebateSession, generate_session_name
+from session import DebateSession, generate_session_name, generate_continuation_strategy
 from dialectic_poc import Agent, Logger, Observer
 from debate_graph import NodeType, EdgeType
 from agent_generation import generate_agent_ensemble
@@ -491,6 +491,69 @@ with tab2:
             st.subheader("Key Claims")
             for claim in selected_node.key_claims:
                 st.markdown(f"- {claim}")
+
+        # Continue from this node
+        st.divider()
+        st.subheader("🔄 Continue from this node")
+
+        if st.button("🎯 Generate Continuation Strategy", key=f"gen_strategy_{selected_node.node_id}"):
+            with st.spinner("Generating continuation strategy..."):
+                strategy = generate_continuation_strategy(selected_node)
+                st.session_state.continuation_strategy = strategy
+                st.session_state.continuation_node_id = selected_node.node_id
+                st.rerun()
+
+        # Show generated strategy if available
+        if (hasattr(st.session_state, 'continuation_strategy') and
+            hasattr(st.session_state, 'continuation_node_id') and
+            st.session_state.continuation_node_id == selected_node.node_id):
+
+            strategy = st.session_state.continuation_strategy
+
+            st.info(f"**Continuation Type:** {strategy['approach_type']}")
+            st.markdown(f"**Proposed Question:**\n> {strategy['question']}")
+            st.markdown(f"**Rationale:** {strategy['rationale']}")
+
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                # Allow editing the question
+                edited_question = st.text_area(
+                    "Edit continuation question if needed:",
+                    value=strategy['question'],
+                    key=f"edit_q_{selected_node.node_id}"
+                )
+
+            with col2:
+                st.markdown("") # Spacer
+                st.markdown("") # Spacer
+                if st.button("▶️ Run Continuation", type="primary", key=f"run_cont_{selected_node.node_id}"):
+                    if st.session_state.session and st.session_state.agents:
+                        with st.spinner("Running continuation debate..."):
+                            # Create logger
+                            with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+                                log_path = f.name
+
+                            logger = Logger(log_path)
+
+                            # Run branch debate with continuation question
+                            cont_node = st.session_state.session.process_branch(
+                                branch_question=edited_question,
+                                parent_node_id=selected_node.node_id,
+                                agents=st.session_state.agents,
+                                logger=logger,
+                                max_rounds=branch_rounds
+                            )
+
+                            st.success(f"✅ Continuation created: {cont_node.topic[:60]}...")
+
+                            # Clear continuation state
+                            delattr(st.session_state, 'continuation_strategy')
+                            delattr(st.session_state, 'continuation_node_id')
+
+                            st.rerun()
+                    else:
+                        st.error("No active session or agents available")
+
     else:
         st.info("No debates yet. Create a session and run a debate from the Input tab.")
 
@@ -550,13 +613,23 @@ with tab3:
                 else:
                     node_colors.append('lightgray')
 
-            nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=2000, alpha=0.9, ax=ax)
+            nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=4000,
+                                  alpha=0.9, node_shape='s', ax=ax)  # Square nodes for text
             nx.draw_networkx_edges(G, pos, edge_color=edge_colors, arrows=True,
                                   arrowsize=20, width=2, alpha=0.6, ax=ax)
 
-            # Labels
-            labels = {node_id: f"{i+1}" for i, node_id in enumerate(G.nodes())}
-            nx.draw_networkx_labels(G, pos, labels, font_size=12, font_weight='bold', ax=ax)
+            # Labels using concise summaries
+            labels = {}
+            all_nodes_list = list(st.session_state.session.dag.get_all_nodes())
+            for i, node_id in enumerate(G.nodes()):
+                node = st.session_state.session.dag.get_node(node_id)
+                # Use concise summary if available, otherwise truncate topic
+                if node.concise_summary:
+                    labels[node_id] = f"{i+1}.\n{node.concise_summary}"
+                else:
+                    labels[node_id] = f"{i+1}.\n{node.topic[:30]}..."
+
+            nx.draw_networkx_labels(G, pos, labels, font_size=8, font_weight='normal', ax=ax)
 
             plt.axis('off')
             plt.tight_layout()
