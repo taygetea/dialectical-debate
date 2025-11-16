@@ -367,22 +367,24 @@ with tab1:
 
             # Auto-generate session name if no session exists
             if st.session_state.session is None:
-                session_name = generate_session_name(passage)
-                st.session_state.session = DebateSession(session_name)
-                st.session_state.chat_history.append({
-                    'role': 'system',
-                    'content': f"📁 Created session: **{format_session_display_name(session_name)}**"
-                })
+                with st.spinner("🔄 Generating session name..."):
+                    session_name = generate_session_name(passage)
+                    st.session_state.session = DebateSession(session_name)
+                    st.session_state.chat_history.append({
+                        'role': 'system',
+                        'content': f"📁 Created session: **{format_session_display_name(session_name)}**"
+                    })
 
             # Generate agents if needed
             if st.session_state.agents is None:
-                agents = generate_agent_ensemble(
-                    passage,
-                    num_agents=num_auto_agents,
-                    verbose=False,
-                    default_model=st.session_state.debate_model
-                )
-                st.session_state.agents = agents
+                with st.spinner(f"🤖 Generating {num_auto_agents} diverse debate agents..."):
+                    agents = generate_agent_ensemble(
+                        passage,
+                        num_agents=num_auto_agents,
+                        verbose=False,
+                        default_model=st.session_state.debate_model
+                    )
+                    st.session_state.agents = agents
 
             # Store passage for later use
             st.session_state.pending_passage = passage
