@@ -498,13 +498,14 @@ with tab1:
 
                 # Node selector
                 node_labels = {
-                    f"Node {i+1} [{node.node_type.value.upper()}]: {node.topic[:60]}": node
+                    f"Node {i+1} [{node.node_type.value.upper()}]: {node.concise_summary or node.topic[:50]}": node
                     for i, node in enumerate(nodes)
                 }
 
                 selected_label = st.selectbox(
                     "Select a node to continue from:",
                     list(node_labels.keys()),
+                    index=len(node_labels)-1,  # Default to most recent node
                     key="continue_node_selector"
                 )
                 selected_node = node_labels[selected_label]
