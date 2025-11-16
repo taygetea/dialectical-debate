@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 from session import DebateSession
 from dialectic_poc import Agent, Logger
 from debate_graph import NodeType, EdgeType
+from agent_generation import generate_agent_ensemble
 import tempfile
 
 # Page configuration
@@ -37,17 +38,25 @@ st.markdown("""
     display: flex;
     flex-direction: column;
 }
-.literalist {
+.literalist, .agent-0 {
     background-color: #e3f2fd;
     border-left: 4px solid #1976d2;
 }
-.symbolist {
+.symbolist, .agent-1 {
     background-color: #f3e5f5;
     border-left: 4px solid #7b1fa2;
 }
-.structuralist {
+.structuralist, .agent-2 {
     background-color: #e8f5e9;
     border-left: 4px solid #388e3c;
+}
+.agent-3 {
+    background-color: #fff3e0;
+    border-left: 4px solid #f57c00;
+}
+.agent-4 {
+    background-color: #fce4ec;
+    border-left: 4px solid #c2185b;
 }
 .agent-name {
     font-weight: bold;
@@ -98,41 +107,56 @@ st.sidebar.title("⚙️ Configuration")
 # Agent customization
 st.sidebar.subheader("Debate Agents")
 
-with st.sidebar.expander("🔍 The Literalist", expanded=False):
-    lit_stance = st.text_area(
-        "Stance",
-        "You interpret text literally and factually, focusing on what is explicitly stated.",
-        key="lit_stance"
-    )
-    lit_focus = st.text_input(
-        "Focus",
-        "Concrete claims and logical consistency",
-        key="lit_focus"
-    )
+# Toggle for auto-generation
+use_auto_agents = st.sidebar.checkbox(
+    "🤖 Auto-generate agents from passage",
+    value=False,
+    help="Generate debate agents specifically tuned to the passage using LLM"
+)
 
-with st.sidebar.expander("🌟 The Symbolist", expanded=False):
-    sym_stance = st.text_area(
-        "Stance",
-        "You see deeper symbolic and archetypal meanings beneath the surface.",
-        key="sym_stance"
-    )
-    sym_focus = st.text_input(
-        "Focus",
-        "Metaphorical significance and universal patterns",
-        key="sym_focus"
-    )
+if use_auto_agents:
+    st.sidebar.info("Agents will be generated when you start the debate based on the passage content.")
+    num_auto_agents = st.sidebar.slider("Number of agents", 2, 5, 3)
+else:
+    # Manual agent configuration
+    st.sidebar.markdown("*Customize the debate agents below:*")
 
-with st.sidebar.expander("🏛️ The Structuralist", expanded=False):
-    str_stance = st.text_area(
-        "Stance",
-        "You analyze underlying structures, patterns, and formal relationships.",
-        key="str_stance"
-    )
-    str_focus = st.text_input(
-        "Focus",
-        "Systems, frameworks, and organizational principles",
-        key="str_focus"
-    )
+if not use_auto_agents:
+    with st.sidebar.expander("🔍 The Literalist", expanded=False):
+        lit_stance = st.text_area(
+            "Stance",
+            "You interpret text literally and factually, focusing on what is explicitly stated.",
+            key="lit_stance"
+        )
+        lit_focus = st.text_input(
+            "Focus",
+            "Concrete claims and logical consistency",
+            key="lit_focus"
+        )
+
+    with st.sidebar.expander("🌟 The Symbolist", expanded=False):
+        sym_stance = st.text_area(
+            "Stance",
+            "You see deeper symbolic and archetypal meanings beneath the surface.",
+            key="sym_stance"
+        )
+        sym_focus = st.text_input(
+            "Focus",
+            "Metaphorical significance and universal patterns",
+            key="sym_focus"
+        )
+
+    with st.sidebar.expander("🏛️ The Structuralist", expanded=False):
+        str_stance = st.text_area(
+            "Stance",
+            "You analyze underlying structures, patterns, and formal relationships.",
+            key="str_stance"
+        )
+        str_focus = st.text_input(
+            "Focus",
+            "Systems, frameworks, and organizational principles",
+            key="str_focus"
+        )
 
 # Debate settings
 st.sidebar.subheader("Debate Settings")
@@ -148,14 +172,21 @@ session_name = st.sidebar.text_input(
 )
 
 if st.sidebar.button("📁 New Session"):
-    agents = [
-        Agent("The Literalist", lit_stance, lit_focus),
-        Agent("The Symbolist", sym_stance, sym_focus),
-        Agent("The Structuralist", str_stance, str_focus)
-    ]
     st.session_state.session = DebateSession(session_name)
-    st.session_state.agents = agents
-    st.sidebar.success(f"Created session: {session_name}")
+
+    if not use_auto_agents:
+        # Create manual agents
+        agents = [
+            Agent("The Literalist", lit_stance, lit_focus),
+            Agent("The Symbolist", sym_stance, sym_focus),
+            Agent("The Structuralist", str_stance, str_focus)
+        ]
+        st.session_state.agents = agents
+        st.sidebar.success(f"Created session: {session_name}")
+    else:
+        # Will generate agents from passage when debate starts
+        st.session_state.agents = None
+        st.sidebar.success(f"Created session: {session_name} (agents will be auto-generated)")
 
 # Main area: Tabs
 tab1, tab2, tab3, tab4 = st.tabs(["📝 Input", "💬 Debate", "🕸️ Graph", "📖 Narrative"])
@@ -179,6 +210,15 @@ with tab1:
             else:
                 st.session_state.debate_running = True
 
+                # Generate agents if needed
+                if st.session_state.agents is None:
+                    with st.spinner(f"Generating {num_auto_agents} agents tuned to passage..."):
+                        agents = generate_agent_ensemble(passage, num_agents=num_auto_agents, verbose=False)
+                        st.session_state.agents = agents
+                        st.info(f"Generated agents: {', '.join([a.name for a in agents])}")
+                else:
+                    agents = st.session_state.agents
+
                 with st.spinner("Running debate..."):
                     # Create temporary logger
                     with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
@@ -189,7 +229,7 @@ with tab1:
                     # Run debate
                     node = st.session_state.session.process_passage(
                         passage=passage,
-                        agents=st.session_state.agents,
+                        agents=agents,
                         logger=logger,
                         max_rounds=max_rounds
                     )
@@ -263,11 +303,16 @@ with tab2:
 
         # Chat bubbles
         if selected_node.turns_data:
+            # Get unique agent names for color mapping
+            unique_agents = list(dict.fromkeys([t['agent_name'] for t in selected_node.turns_data]))
+            agent_to_index = {name: i for i, name in enumerate(unique_agents)}
+
             for turn in selected_node.turns_data:
                 agent_name = turn['agent_name'].lower().replace('the ', '')
+                agent_index = agent_to_index.get(turn['agent_name'], 0)
 
                 st.markdown(f"""
-                <div class="chat-message {agent_name}">
+                <div class="chat-message {agent_name} agent-{agent_index}">
                     <div class="agent-name">
                         {turn['agent_name']}
                         <span class="round-badge">Round {turn['round_num']}</span>
