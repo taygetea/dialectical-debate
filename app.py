@@ -489,16 +489,67 @@ with tab1:
                 )
                 selected_node = node_labels[selected_label]
 
-                # Show node info
-                with st.expander("📄 View Node Details", expanded=False):
-                    st.markdown(f"**Type:** {selected_node.node_type.value}")
-                    st.markdown(f"**Concise:** {selected_node.concise_summary}")
-                    st.markdown(f"**Resolution:** {selected_node.resolution}")
-
-                # Generate continuation strategy button
-                col1, col2 = st.columns(2)
+                # Action buttons
+                col1, col2, col3 = st.columns(3)
 
                 with col1:
+                    if st.button("📖 Load into Chat", use_container_width=True):
+                        # Clear current chat and load this node
+                        st.session_state.chat_history = []
+
+                        # Add passage/question context
+                        if selected_node.passage:
+                            st.session_state.chat_history.append({
+                                'role': 'user',
+                                'content': f"**Passage to debate:**\n\n{selected_node.passage}"
+                            })
+                        elif selected_node.branch_question:
+                            st.session_state.chat_history.append({
+                                'role': 'system',
+                                'content': f"**Branch Question:** {selected_node.branch_question}"
+                            })
+
+                        # Add debate turns with avatars
+                        if selected_node.turns_data:
+                            avatar_map = {0: '📖', 1: '✨', 2: '🏛️', 3: '🎨', 4: '🔬'}
+                            unique_agents = list(dict.fromkeys([t['agent_name'] for t in selected_node.turns_data]))
+                            agent_to_index = {name: i for i, name in enumerate(unique_agents)}
+
+                            for turn in selected_node.turns_data:
+                                agent_idx = agent_to_index.get(turn['agent_name'], 0)
+                                st.session_state.chat_history.append({
+                                    'role': 'agent',
+                                    'name': turn['agent_name'],
+                                    'content': turn['content'],
+                                    'round': turn['round_num'],
+                                    'avatar': avatar_map.get(agent_idx, '🤔')
+                                })
+
+                        # Add resolution as system message
+                        st.session_state.chat_history.append({
+                            'role': 'system',
+                            'content': f"**Resolution ({selected_node.node_type.value}):**\n\n{selected_node.resolution}"
+                        })
+
+                        # Add key claims if available
+                        if selected_node.key_claims:
+                            claims_text = "\n".join([f"• {claim}" for claim in selected_node.key_claims])
+                            st.session_state.chat_history.append({
+                                'role': 'system',
+                                'content': f"**Key Claims:**\n{claims_text}"
+                            })
+
+                        # Add theme tags if available
+                        if selected_node.theme_tags:
+                            tags_text = " ".join([f"#{tag}" for tag in sorted(selected_node.theme_tags)])
+                            st.session_state.chat_history.append({
+                                'role': 'system',
+                                'content': f"**Themes:** {tags_text}"
+                            })
+
+                        st.rerun()
+
+                with col2:
                     if st.button("🎯 Generate Continuation Question", use_container_width=True):
                         with st.spinner("Generating continuation strategy..."):
                             strategy = generate_continuation_strategy(selected_node)
@@ -506,7 +557,7 @@ with tab1:
                             st.session_state.continuation_node_id = selected_node.node_id
                             st.rerun()
 
-                with col2:
+                with col3:
                     if st.button("🔄 Start New Debate", use_container_width=True):
                         # Clear chat history and reset
                         st.session_state.chat_history = []
@@ -612,7 +663,28 @@ with tab1:
             st.session_state.session.save()
             st.session_state.current_node = node
 
-            # Add completion message
+            # Add completion message with annotations
+            st.session_state.chat_history.append({
+                'role': 'system',
+                'content': f"**Resolution ({node.node_type.value}):**\n\n{node.resolution}"
+            })
+
+            # Add key claims if available
+            if node.key_claims:
+                claims_text = "\n".join([f"• {claim}" for claim in node.key_claims])
+                st.session_state.chat_history.append({
+                    'role': 'system',
+                    'content': f"**Key Claims:**\n{claims_text}"
+                })
+
+            # Add theme tags if available
+            if node.theme_tags:
+                tags_text = " ".join([f"#{tag}" for tag in sorted(node.theme_tags)])
+                st.session_state.chat_history.append({
+                    'role': 'system',
+                    'content': f"**Themes:** {tags_text}"
+                })
+
             st.session_state.chat_history.append({
                 'role': 'system',
                 'content': f"✅ Main debate complete! **{node.topic}**"
