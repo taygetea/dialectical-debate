@@ -144,6 +144,14 @@ if 'debate_running' not in st.session_state:
 if 'passage_for_naming' not in st.session_state:
     st.session_state.passage_for_naming = None
 
+# Initialize session state early (before sidebar uses it)
+if 'agents' not in st.session_state:
+    st.session_state.agents = None
+if 'agents_confirmed' not in st.session_state:
+    st.session_state.agents_confirmed = False
+if 'debate_model' not in st.session_state:
+    st.session_state.debate_model = "electronhub/claude-sonnet-4-5-20250929"
+
 # Sidebar: Configuration
 st.sidebar.title("⚙️ Configuration")
 
@@ -316,12 +324,6 @@ if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
 if 'current_debate_turns' not in st.session_state:
     st.session_state.current_debate_turns = []
-if 'agents' not in st.session_state:
-    st.session_state.agents = None
-if 'agents_confirmed' not in st.session_state:
-    st.session_state.agents_confirmed = False
-if 'debate_model' not in st.session_state:
-    st.session_state.debate_model = "electronhub/claude-sonnet-4-5-20250929"
 
 # Main area: Tabs
 tab1, tab2, tab3 = st.tabs(["💬 Debate Chat", "🕸️ Graph", "📖 Narrative"])
