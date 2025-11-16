@@ -27,6 +27,54 @@ from edge_detection import EdgeDetector
 from linearization import LinearizationEngine
 
 
+def generate_session_name(passage: str, temperature: float = 0.7) -> str:
+    """
+    Generate a concise, meaningful session name from a passage using LLM
+
+    Args:
+        passage: The passage to analyze
+        temperature: Sampling temperature
+
+    Returns:
+        A short, filesystem-safe session name (e.g., "nietzsche_zarathustra_mountains")
+    """
+
+    system_prompt = """You are a concise naming assistant.
+
+Generate a SHORT, descriptive name for a debate session based on the given passage.
+
+Requirements:
+- 2-4 words maximum
+- lowercase with underscores
+- NO spaces, NO special characters (except underscores)
+- Captures the core topic or key concept
+- Filesystem-safe
+
+Examples:
+- "When Zarathustra was thirty..." → "zarathustra_thirty_years"
+- "To be or not to be..." → "hamlet_existence_question"
+- "the teeming chaos of willful being..." → "chaos_structure_reality"
+
+Output ONLY the name, nothing else."""
+
+    user_prompt = f"""Passage:\n{passage}\n\nGenerate session name:"""
+
+    response = llm_call(
+        system_prompt,
+        user_prompt,
+        temperature=temperature,
+        model="electronhub/claude-sonnet-4-5-20250929"
+    )
+
+    # Clean up response (remove quotes, whitespace, etc.)
+    name = response.strip().strip('"\'').replace(' ', '_').lower()
+
+    # Add timestamp to ensure uniqueness
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    return f"{name}_{timestamp}"
+
+
 class DebateSession:
     """
     Orchestrates graph-building debates

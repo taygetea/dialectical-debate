@@ -14,12 +14,14 @@ import json
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from session import DebateSession
+from session import DebateSession, generate_session_name
 from dialectic_poc import Agent, Logger, Observer
 from debate_graph import NodeType, EdgeType
 from agent_generation import generate_agent_ensemble
 from phase2_observer_generation import generate_observer_ensemble
 import tempfile
+import os
+import glob
 
 # Page configuration
 st.set_page_config(
@@ -95,6 +97,43 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Helper functions for session management
+def get_saved_sessions():
+    """Get list of all saved sessions from output directory"""
+    output_dir = Path("output")
+    if not output_dir.exists():
+        return []
+
+    sessions = []
+    for session_dir in output_dir.iterdir():
+        if session_dir.is_dir():
+            # Look for DAG file
+            dag_files = list(session_dir.glob("*_dag.json"))
+            if dag_files:
+                sessions.append({
+                    'name': session_dir.name,
+                    'path': session_dir,
+                    'dag_path': dag_files[0],
+                    'modified': dag_files[0].stat().st_mtime
+                })
+
+    # Sort by modification time (newest first)
+    sessions.sort(key=lambda x: x['modified'], reverse=True)
+    return sessions
+
+def format_session_display_name(session_name: str) -> str:
+    """Format session name for display (remove timestamp, capitalize)"""
+    # Try to remove timestamp pattern (YYYYMMDD_HHMMSS)
+    parts = session_name.split('_')
+    if len(parts) >= 2 and parts[-2].isdigit() and len(parts[-2]) == 8:
+        # Has timestamp, remove last 2 parts
+        display_name = '_'.join(parts[:-2])
+    else:
+        display_name = session_name
+
+    # Capitalize and replace underscores with spaces for display
+    return display_name.replace('_', ' ').title()
+
 # Initialize session state
 if 'session' not in st.session_state:
     st.session_state.session = None
@@ -102,6 +141,8 @@ if 'current_node' not in st.session_state:
     st.session_state.current_node = None
 if 'debate_running' not in st.session_state:
     st.session_state.debate_running = False
+if 'passage_for_naming' not in st.session_state:
+    st.session_state.passage_for_naming = None
 
 # Sidebar: Configuration
 st.sidebar.title("⚙️ Configuration")
@@ -177,15 +218,69 @@ if auto_branch:
                                       help="Generate multiple observers to explore different branch angles")
 
 # Session management
-st.sidebar.subheader("Session Management")
-session_name = st.sidebar.text_input(
-    "Session Name",
-    f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-    key="session_name"
-)
+st.sidebar.subheader("📂 Session Management")
 
-if st.sidebar.button("📁 New Session"):
-    st.session_state.session = DebateSession(session_name)
+# Show saved sessions
+saved_sessions = get_saved_sessions()
+
+if saved_sessions:
+    st.sidebar.markdown("**Load Previous Session:**")
+
+    session_options = {
+        f"{format_session_display_name(s['name'])} ({datetime.fromtimestamp(s['modified']).strftime('%m/%d %H:%M')})": s
+        for s in saved_sessions
+    }
+
+    selected_session_label = st.sidebar.selectbox(
+        "Select a session:",
+        ["-- Create New --"] + list(session_options.keys()),
+        key="session_selector"
+    )
+
+    if selected_session_label != "-- Create New --":
+        col1, col2 = st.sidebar.columns([3, 1])
+        with col1:
+            if st.button("📂 Load Session", use_container_width=True):
+                selected_session = session_options[selected_session_label]
+                st.session_state.session = DebateSession(
+                    selected_session['name'],
+                    load_existing=True
+                )
+
+                # Load agents from first node if available
+                if st.session_state.session.dag.nodes:
+                    first_node = list(st.session_state.session.dag.nodes.values())[0]
+                    st.session_state.current_node = first_node
+
+                st.sidebar.success(f"✅ Loaded: {format_session_display_name(selected_session['name'])}")
+                st.rerun()
+
+        with col2:
+            # Delete button
+            if st.button("🗑️", help="Delete this session", use_container_width=True):
+                import shutil
+                selected_session = session_options[selected_session_label]
+                shutil.rmtree(selected_session['path'])
+                st.sidebar.warning(f"Deleted: {selected_session['name']}")
+                st.rerun()
+
+    st.sidebar.divider()
+
+# New session creation
+st.sidebar.markdown("**Create New Session:**")
+
+# Show current session info if loaded
+if st.session_state.session:
+    st.sidebar.info(f"**Current:** {format_session_display_name(st.session_state.session.session_name)}")
+    stats = st.session_state.session.get_stats()
+    st.sidebar.markdown(f"_Nodes: {stats['total_nodes']}, Edges: {stats['total_edges']}_")
+else:
+    st.sidebar.info("No session loaded. Create new or load existing.")
+
+if st.sidebar.button("➕ Create New Session"):
+    # Will be created when debate starts with auto-generated name
+    st.session_state.session = None
+    st.session_state.current_node = None
 
     if not use_auto_agents:
         # Create manual agents
@@ -195,11 +290,11 @@ if st.sidebar.button("📁 New Session"):
             Agent("The Structuralist", str_stance, str_focus)
         ]
         st.session_state.agents = agents
-        st.sidebar.success(f"Created session: {session_name}")
     else:
         # Will generate agents from passage when debate starts
         st.session_state.agents = None
-        st.sidebar.success(f"Created session: {session_name} (agents will be auto-generated)")
+
+    st.sidebar.success("✅ Ready for new session. Session name will be auto-generated from passage.")
 
 # Main area: Tabs
 tab1, tab2, tab3, tab4 = st.tabs(["📝 Input", "💬 Debate", "🕸️ Graph", "📖 Narrative"])
@@ -218,95 +313,99 @@ with tab1:
 
     with col1:
         if st.button("🚀 Start Main Debate", type="primary", disabled=not passage or st.session_state.debate_running):
+            st.session_state.debate_running = True
+
+            # Auto-generate session name if no session exists
             if st.session_state.session is None:
-                st.error("Please create a session first (sidebar)")
+                with st.spinner("Generating session name..."):
+                    session_name = generate_session_name(passage)
+                    st.session_state.session = DebateSession(session_name)
+                    st.info(f"📁 Created session: {format_session_display_name(session_name)}")
+
+            # Generate agents if needed
+            if st.session_state.agents is None:
+                with st.spinner(f"Generating {num_auto_agents} agents tuned to passage..."):
+                    agents = generate_agent_ensemble(passage, num_agents=num_auto_agents, verbose=False)
+                    st.session_state.agents = agents
+                    st.info(f"Generated agents: {', '.join([a.name for a in agents])}")
             else:
-                st.session_state.debate_running = True
+                agents = st.session_state.agents
 
-                # Generate agents if needed
-                if st.session_state.agents is None:
-                    with st.spinner(f"Generating {num_auto_agents} agents tuned to passage..."):
-                        agents = generate_agent_ensemble(passage, num_agents=num_auto_agents, verbose=False)
-                        st.session_state.agents = agents
-                        st.info(f"Generated agents: {', '.join([a.name for a in agents])}")
-                else:
-                    agents = st.session_state.agents
+            with st.spinner("Running debate..."):
+                # Create temporary logger
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+                    log_path = f.name
 
-                with st.spinner("Running debate..."):
-                    # Create temporary logger
-                    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
-                        log_path = f.name
+                logger = Logger(log_path)
 
-                    logger = Logger(log_path)
+                # Run debate
+                node = st.session_state.session.process_passage(
+                    passage=passage,
+                    agents=agents,
+                    logger=logger,
+                    max_rounds=max_rounds
+                )
 
-                    # Run debate
-                    node = st.session_state.session.process_passage(
-                        passage=passage,
-                        agents=agents,
-                        logger=logger,
-                        max_rounds=max_rounds
+                st.session_state.current_node = node
+
+            # Auto-branch if enabled
+            if auto_branch:
+                with st.spinner(f"Generating {num_observers} observer(s) to identify branch questions..."):
+                    # Generate observers
+                    observers_data = generate_observer_ensemble(
+                        passage,
+                        num_perspectives=num_observers,
+                        verbose=False
                     )
 
-                    st.session_state.current_node = node
+                    # Convert to Observer objects
+                    observers = [
+                        Observer(
+                            name=obs['name'],
+                            bias=obs['bias'],
+                            focus=obs['focus'],
+                            blind_spots=obs['blind_spots'],
+                            example_questions=obs.get('example_questions', []),
+                            anti_examples=obs.get('anti_examples', [])
+                        )
+                        for obs in observers_data
+                    ]
 
-                # Auto-branch if enabled
-                if auto_branch:
-                    with st.spinner(f"Generating {num_observers} observer(s) to identify branch questions..."):
-                        # Generate observers
-                        observers_data = generate_observer_ensemble(
-                            passage,
-                            num_perspectives=num_observers,
-                            verbose=False
+                # Run branch debates for each observer
+                for i, observer in enumerate(observers, 1):
+                    with st.spinner(f"Observer {i}/{num_observers} ({observer.name}) identifying branch..."):
+                        # Get transcript text for observer
+                        transcript_text = "\n\n".join([
+                            f"**{turn['agent_name']}** (Round {turn['round_num']}):\n{turn['content']}"
+                            for turn in node.turns_data
+                        ])
+
+                        # Observer identifies branch question
+                        branch_question = observer.identify_branch(transcript_text, passage)
+
+                    st.info(f"🔍 {observer.name} asks: {branch_question}")
+
+                    with st.spinner(f"Running branch debate {i}/{num_observers}..."):
+                        # Create new logger for branch
+                        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+                            branch_log_path = f.name
+
+                        branch_logger = Logger(branch_log_path)
+
+                        # Run branch debate
+                        branch_node = st.session_state.session.process_branch(
+                            branch_question=branch_question,
+                            parent_node_id=node.node_id,
+                            agents=agents,
+                            logger=branch_logger,
+                            max_rounds=branch_rounds
                         )
 
-                        # Convert to Observer objects
-                        observers = [
-                            Observer(
-                                name=obs['name'],
-                                bias=obs['bias'],
-                                focus=obs['focus'],
-                                blind_spots=obs['blind_spots'],
-                                example_questions=obs.get('example_questions', []),
-                                anti_examples=obs.get('anti_examples', [])
-                            )
-                            for obs in observers_data
-                        ]
+                        st.success(f"✅ Branch {i} complete: {branch_node.topic[:60]}...")
 
-                    # Run branch debates for each observer
-                    for i, observer in enumerate(observers, 1):
-                        with st.spinner(f"Observer {i}/{num_observers} ({observer.name}) identifying branch..."):
-                            # Get transcript text for observer
-                            transcript_text = "\n\n".join([
-                                f"**{turn['agent_name']}** (Round {turn['round_num']}):\n{turn['content']}"
-                                for turn in node.turns_data
-                            ])
-
-                            # Observer identifies branch question
-                            branch_question = observer.identify_branch(transcript_text, passage)
-
-                        st.info(f"🔍 {observer.name} asks: {branch_question}")
-
-                        with st.spinner(f"Running branch debate {i}/{num_observers}..."):
-                            # Create new logger for branch
-                            with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
-                                branch_log_path = f.name
-
-                            branch_logger = Logger(branch_log_path)
-
-                            # Run branch debate
-                            branch_node = st.session_state.session.process_branch(
-                                branch_question=branch_question,
-                                parent_node_id=node.node_id,
-                                agents=agents,
-                                logger=branch_logger,
-                                max_rounds=branch_rounds
-                            )
-
-                            st.success(f"✅ Branch {i} complete: {branch_node.topic[:60]}...")
-
-                st.session_state.debate_running = False
-                st.success(f"✅ All debates complete! Main node + {num_observers if auto_branch else 0} branch(es)")
-                st.rerun()
+            st.session_state.debate_running = False
+            st.success(f"✅ All debates complete! Main node + {num_observers if auto_branch else 0} branch(es)")
+            st.rerun()
 
     with col2:
         branch_question = st.text_input("Branch question (optional):")
@@ -332,17 +431,6 @@ with tab1:
 
                 st.success(f"✅ Branch complete! Created node: {node.topic[:80]}...")
                 st.rerun()
-
-    # Show current session stats
-    if st.session_state.session:
-        st.divider()
-        st.subheader("Current Session")
-        stats = st.session_state.session.get_stats()
-
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Total Nodes", stats['total_nodes'])
-        col2.metric("Total Edges", stats['total_edges'])
-        col3.metric("Session", stats['session_name'])
 
 # TAB 2: Debate View (Chat Bubbles)
 with tab2:
