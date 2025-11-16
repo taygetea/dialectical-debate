@@ -235,6 +235,167 @@ Question:"""
             model="electronhub/claude-sonnet-4-5-20250929"  # Fallback to Sonnet (Haiku had issues)
         )
 
+    def check_for_tension(
+        self,
+        turn: 'DebateTurn',
+        transcript: List['DebateTurn'],
+        threshold: float = 0.4
+    ) -> Optional[Dict[str, str]]:
+        """Check if this turn reveals a tension worth flagging (real-time monitoring)
+
+        Called after each debate turn. Observer examines the turn to see if it
+        reveals a gap, assumption, or unexplored angle from their perspective.
+
+        Args:
+            turn: The turn that just happened
+            transcript: Full debate history including this turn
+            threshold: Minimum significance threshold (0.0 to 1.0)
+
+        Returns:
+            Dict with 'question', 'context', 'rationale' if tension found, else None
+        """
+        import json
+
+        system_prompt = f"""You are {self.name}, monitoring a philosophical debate in real-time.
+
+Your core bias: {self.bias}
+Your focus: {self.focus}
+
+Your job: Watch each turn and decide if it reveals a tension/gap/assumption worth flagging for a branch debate.
+
+NOT every turn deserves a flag. Only flag if:
+- The turn reveals something genuinely unexplored from your perspective
+- Your bias makes a gap obvious that others would miss
+- A specific assumption needs challenging
+
+Output JSON:
+{{
+  "should_flag": true/false,
+  "question": "Branch question (if flagging)",
+  "context": "Relevant excerpt from turn",
+  "rationale": "Why this deserves a branch",
+  "significance": 0.0-1.0 (how important is this)
+}}
+
+If not worth flagging, output: {{"should_flag": false}}
+
+Be selective. Only flag significant tensions."""
+
+        # Format recent context
+        recent_turns = transcript[-3:] if len(transcript) > 3 else transcript
+        context_text = "\n\n".join([
+            f"{t.agent_name}: {t.content}"
+            for t in recent_turns[:-1]  # Don't include the current turn in context
+        ])
+
+        user_prompt = f"""Recent context:
+{context_text}
+
+Current turn:
+{turn.agent_name}: {turn.content}
+
+Does this turn reveal a tension worth flagging from YOUR perspective ({self.bias})?
+
+JSON:"""
+
+        response = llm_call(
+            system_prompt,
+            user_prompt,
+            temperature=0.6,
+            model="electronhub/claude-sonnet-4-5-20250929"
+        )
+
+        # Parse JSON response
+        try:
+            # Clean response
+            response = response.strip()
+            if "```json" in response:
+                response = response.split("```json")[1].split("```")[0].strip()
+            elif "```" in response:
+                response = response.split("```")[1].split("```")[0].strip()
+
+            start = response.find('{')
+            end = response.rfind('}')
+            if start != -1 and end != -1:
+                response = response[start:end+1]
+
+            data = json.loads(response)
+
+            # Check if should flag and meets threshold
+            if data.get('should_flag') and data.get('significance', 0.0) >= threshold:
+                return {
+                    'question': data.get('question', 'Unexplored tension'),
+                    'context': data.get('context', turn.content[:200]),
+                    'rationale': data.get('rationale', 'Tension identified')
+                }
+
+            return None
+
+        except (json.JSONDecodeError, KeyError) as e:
+            # If parsing fails, don't flag
+            print(f"Warning: Observer {self.name} returned invalid JSON: {e}")
+            return None
+
+    def rate_urgency(
+        self,
+        tension_data: Dict[str, str],
+        transcript: List['DebateTurn']
+    ) -> float:
+        """Rate how urgent/important a flagged tension is
+
+        Args:
+            tension_data: Data from check_for_tension (question, context, rationale)
+            transcript: Full debate transcript
+
+        Returns:
+            Urgency score 0.0 (low) to 1.0 (high)
+        """
+
+        system_prompt = f"""You are {self.name}, rating the urgency of a flagged tension.
+
+Your core bias: {self.bias}
+Your focus: {self.focus}
+
+Rate urgency based on:
+- How central is this to the debate's core questions?
+- How much would exploring this change the debate?
+- How likely are debaters to miss this without intervention?
+
+Output ONLY a number from 0.0 to 1.0:
+- 0.0-0.3: Minor tangent, low priority
+- 0.4-0.6: Interesting angle worth exploring
+- 0.7-0.9: Important gap that needs addressing
+- 0.9-1.0: Critical tension at the heart of the debate"""
+
+        user_prompt = f"""Debate has {len(transcript)} turns so far.
+
+Flagged tension:
+Question: {tension_data['question']}
+Rationale: {tension_data['rationale']}
+
+Urgency score (0.0-1.0):"""
+
+        response = llm_call(
+            system_prompt,
+            user_prompt,
+            temperature=0.3,  # Low temp for consistent scoring
+            model="electronhub/claude-sonnet-4-5-20250929"
+        )
+
+        # Parse score
+        try:
+            # Extract first number found
+            import re
+            numbers = re.findall(r'0\.\d+|1\.0', response)
+            if numbers:
+                score = float(numbers[0])
+                return max(0.0, min(1.0, score))  # Clamp to 0-1
+            else:
+                # Default to medium urgency if can't parse
+                return 0.5
+        except ValueError:
+            return 0.5
+
 class DebateTurn:
     """A single turn in the debate"""
     def __init__(self, agent_name: str, content: str, round_num: int):
