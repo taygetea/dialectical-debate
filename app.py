@@ -305,11 +305,11 @@ if st.sidebar.button("➕ Create New Session"):
     st.session_state.agents_confirmed = False
 
     if not use_auto_agents:
-        # Create manual agents
+        # Create manual agents with the configured model
         agents = [
-            Agent("The Literalist", lit_stance, lit_focus),
-            Agent("The Symbolist", sym_stance, sym_focus),
-            Agent("The Structuralist", str_stance, str_focus)
+            Agent("The Literalist", lit_stance, lit_focus, st.session_state.debate_model),
+            Agent("The Symbolist", sym_stance, sym_focus, st.session_state.debate_model),
+            Agent("The Structuralist", str_stance, str_focus, st.session_state.debate_model)
         ]
         st.session_state.agents = agents
         # Manual agents are pre-confirmed (user already configured them)
@@ -376,7 +376,12 @@ with tab1:
 
             # Generate agents if needed
             if st.session_state.agents is None:
-                agents = generate_agent_ensemble(passage, num_agents=num_auto_agents, verbose=False)
+                agents = generate_agent_ensemble(
+                    passage,
+                    num_agents=num_auto_agents,
+                    verbose=False,
+                    default_model=st.session_state.debate_model
+                )
                 st.session_state.agents = agents
 
             # Store passage for later use
@@ -425,9 +430,16 @@ with tab1:
                     key=f"agent_stance_{i}"
                 )
 
+                model = st.text_input(
+                    "Model:",
+                    value=getattr(agent, 'model', st.session_state.debate_model),
+                    help="Model for this agent (e.g., electronhub/claude-sonnet-4-5-20250929)",
+                    key=f"agent_model_{i}"
+                )
+
                 # Update agent with edited values
                 from dialectic_poc import Agent
-                edited_agents.append(Agent(name, stance, focus))
+                edited_agents.append(Agent(name, stance, focus, model))
 
         # Action buttons
         col1, col2, col3 = st.columns(3)
@@ -460,9 +472,12 @@ with tab1:
                     'role': 'system',
                     'content': f"🤖 Agents ready: **{agent_names}**"
                 })
+
+                # Show models being used
+                agent_models = "\n".join([f"• {a.name}: {a.model}" for a in edited_agents])
                 st.session_state.chat_history.append({
                     'role': 'system',
-                    'content': f"🎭 Starting debate ({max_rounds} rounds) with model: **{st.session_state.debate_model}**"
+                    'content': f"🎭 Starting debate ({max_rounds} rounds)\n\n**Models:**\n{agent_models}"
                 })
 
                 # Start the debate
@@ -784,13 +799,13 @@ with tab1:
                     ])
                     user_prompt = f"Previous discussion:\n{recent_turns}\n\nYour response:"
 
-                # Make LLM call with selected model
+                # Make LLM call with agent's specific model
                 from dialectic_poc import llm_call, DebateTurn
                 response = llm_call(
                     system_prompt,
                     user_prompt,
                     temperature=0.7,
-                    model=st.session_state.debate_model
+                    model=agent.model
                 )
 
                 # Create turn

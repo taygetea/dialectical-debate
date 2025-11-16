@@ -87,10 +87,11 @@ One-sentence summary:"""
 
 class Agent:
     """Represents a debate participant with a specific perspective"""
-    def __init__(self, name: str, stance: str, focus: str):
+    def __init__(self, name: str, stance: str, focus: str, model: str = "electronhub/claude-sonnet-4-5-20250929"):
         self.name = name
         self.stance = stance
         self.focus = focus
+        self.model = model
 
     def get_system_prompt(self) -> str:
         return f"""You are {self.name}, a participant in a philosophical debate.

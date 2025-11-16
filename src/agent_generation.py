@@ -144,7 +144,8 @@ def generate_agent_ensemble(
     passage: str,
     num_agents: int = 3,
     temperature: float = 0.85,
-    verbose: bool = True
+    verbose: bool = True,
+    default_model: str = "electronhub/claude-sonnet-4-5-20250929"
 ) -> List[Agent]:
     """Generate an ensemble of diverse debate agents tuned to passage
 
@@ -153,6 +154,7 @@ def generate_agent_ensemble(
         num_agents: How many agents to generate (default 3)
         temperature: Sampling temperature for generation
         verbose: Print progress
+        default_model: Default model to assign to all generated agents
 
     Returns:
         List of Agent objects
@@ -196,7 +198,8 @@ def generate_agent_ensemble(
         Agent(
             name=data['name'],
             stance=data['stance'],
-            focus=data['focus']
+            focus=data['focus'],
+            model=default_model
         )
         for data in agent_data_list
     ]
