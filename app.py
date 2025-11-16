@@ -38,6 +38,7 @@ st.markdown("""
     margin-bottom: 1rem;
     display: flex;
     flex-direction: column;
+    color: #1a1a1a;
 }
 .literalist, .agent-0 {
     background-color: #e3f2fd;
@@ -350,7 +351,10 @@ with tab2:
     if st.session_state.session and st.session_state.session.dag.nodes:
         # Node selector
         nodes = st.session_state.session.dag.get_all_nodes()
-        node_options = {f"{i+1}. {node.topic[:60]}...": node for i, node in enumerate(nodes)}
+        node_options = {
+            f"Node {i+1} [{node.node_type.value.upper()}]: {node.topic[:80]}": node
+            for i, node in enumerate(nodes)
+        }
 
         selected_label = st.selectbox("Select debate to view:", list(node_options.keys()))
         selected_node = node_options[selected_label]
@@ -483,6 +487,29 @@ with tab3:
             - Red: Contradicts
             - Green: Elaborates
             """)
+
+            # Node reference table
+            st.divider()
+            st.subheader("Node Reference")
+
+            all_nodes = st.session_state.session.dag.get_all_nodes()
+            for i, node in enumerate(all_nodes, 1):
+                # Emoji based on type
+                if node.node_type == NodeType.SYNTHESIS:
+                    emoji = "🟢"
+                elif node.node_type == NodeType.IMPASSE:
+                    emoji = "🔴"
+                elif node.node_type == NodeType.EXPLORATION:
+                    emoji = "🔵"
+                else:
+                    emoji = "⚪"
+
+                st.markdown(f"**{i}.** {emoji} [{node.node_type.value.upper()}] {node.topic}")
+
+                # Show summary if available
+                if node.resolution:
+                    with st.expander(f"View summary for node {i}"):
+                        st.markdown(node.resolution)
 
         except ImportError:
             st.warning("Graph visualization requires networkx and matplotlib. Install with: `pip install networkx matplotlib`")
