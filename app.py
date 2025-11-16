@@ -324,55 +324,68 @@ with tab1:
                 st.markdown(f"**{msg['name']}** (Round {msg.get('round', '?')})")
                 st.markdown(msg['content'])
 
-    # Input area at bottom
-    st.divider()
+    # Input area at bottom (only show when not actively debating)
+    if not st.session_state.debate_running and len(st.session_state.chat_history) == 0:
+        st.divider()
 
-    # Passage input
-    passage = st.text_area(
-        "Enter a passage to debate:",
-        height=150,
-        placeholder="Enter philosophical text, quotes, or any passage you want the agents to analyze...",
-        key="passage_input"
-    )
+        # Passage input
+        passage = st.text_area(
+            "Enter a passage to debate:",
+            height=150,
+            placeholder="Enter philosophical text, quotes, or any passage you want the agents to analyze...",
+            key="passage_input"
+        )
 
-    if st.button("🚀 Start Main Debate", type="primary", disabled=not passage or st.session_state.debate_running, use_container_width=True):
-        st.session_state.debate_running = True
+        if st.button("🚀 Start Main Debate", type="primary", disabled=not passage, use_container_width=True):
+            st.session_state.debate_running = True
 
-        # Add user passage to chat
-        st.session_state.chat_history.append({
-            'role': 'user',
-            'content': f"**Passage to debate:**\n\n{passage}"
-        })
-
-        # Auto-generate session name if no session exists
-        if st.session_state.session is None:
-            session_name = generate_session_name(passage)
-            st.session_state.session = DebateSession(session_name)
+            # Add user passage to chat
             st.session_state.chat_history.append({
-                'role': 'system',
-                'content': f"📁 Created session: **{format_session_display_name(session_name)}**"
+                'role': 'user',
+                'content': f"**Passage to debate:**\n\n{passage}"
             })
 
-        # Generate agents if needed
-        if st.session_state.agents is None:
-            agents = generate_agent_ensemble(passage, num_agents=num_auto_agents, verbose=False)
-            st.session_state.agents = agents
-            agent_names = ', '.join([a.name for a in agents])
+            # Auto-generate session name if no session exists
+            if st.session_state.session is None:
+                session_name = generate_session_name(passage)
+                st.session_state.session = DebateSession(session_name)
+                st.session_state.chat_history.append({
+                    'role': 'system',
+                    'content': f"📁 Created session: **{format_session_display_name(session_name)}**"
+                })
+
+            # Generate agents if needed
+            if st.session_state.agents is None:
+                agents = generate_agent_ensemble(passage, num_agents=num_auto_agents, verbose=False)
+                st.session_state.agents = agents
+                agent_names = ', '.join([a.name for a in agents])
+                st.session_state.chat_history.append({
+                    'role': 'system',
+                    'content': f"🤖 Generated agents: **{agent_names}**"
+                })
+            else:
+                agents = st.session_state.agents
+
+            # Add system message for debate start
             st.session_state.chat_history.append({
                 'role': 'system',
-                'content': f"🤖 Generated agents: **{agent_names}**"
+                'content': f"🎭 Starting main debate ({max_rounds} rounds)..."
             })
-        else:
-            agents = st.session_state.agents
 
-        # Add system message for debate start
-        st.session_state.chat_history.append({
-            'role': 'system',
-            'content': f"🎭 Starting main debate ({max_rounds} rounds)..."
-        })
-
-        # Rerun to show setup messages
-        st.rerun()
+            # Rerun to show setup messages
+            st.rerun()
+    else:
+        # Show a button to start a new debate after current one completes
+        if not st.session_state.debate_running and len(st.session_state.chat_history) > 0:
+            st.divider()
+            if st.button("🔄 Start New Debate", use_container_width=True):
+                # Clear chat history and reset
+                st.session_state.chat_history = []
+                st.session_state.session = None
+                st.session_state.agents = None
+                if 'debate_state' in st.session_state:
+                    del st.session_state.debate_state
+                st.rerun()
 
     # Check if debate needs to continue (progressive execution)
     if st.session_state.debate_running and st.session_state.session:
