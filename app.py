@@ -622,31 +622,24 @@ with tab1:
                             'content': f"❓ Question: _{edited_question}_"
                         })
 
-                        # Create logger
-                        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
-                            log_path = f.name
-                        logger = Logger(log_path)
-
-                        # Run branch debate
-                        cont_node = st.session_state.session.process_branch(
-                            branch_question=edited_question,
-                            parent_node_id=selected_node.node_id,
-                            agents=st.session_state.agents,
-                            logger=logger,
-                            max_rounds=branch_rounds
-                        )
-
-                        st.session_state.chat_history.append({
-                            'role': 'system',
-                            'content': f"✅ Continuation complete: **{cont_node.topic[:60]}...**"
-                        })
-
                         # Clear continuation state
                         if hasattr(st.session_state, 'continuation_strategy'):
                             delattr(st.session_state, 'continuation_strategy')
                         if hasattr(st.session_state, 'continuation_node_id'):
                             delattr(st.session_state, 'continuation_node_id')
 
+                        # Start branch debate progressively
+                        st.session_state.debate_state = {
+                            'debate_type': 'branch',
+                            'passage': None,
+                            'branch_question': edited_question,
+                            'parent_node_id': selected_node.node_id,
+                            'round': 1,
+                            'agent_idx': 0,
+                            'transcript': [],
+                            'max_rounds': branch_rounds
+                        }
+                        st.session_state.debate_running = True
                         st.rerun()
 
     # Check if debate needs to continue (progressive execution)
@@ -654,7 +647,10 @@ with tab1:
         # Initialize debate state if needed
         if 'debate_state' not in st.session_state:
             st.session_state.debate_state = {
+                'debate_type': 'main',  # 'main' or 'branch'
                 'passage': st.session_state.pending_passage,
+                'branch_question': None,
+                'parent_node_id': None,
                 'round': 1,
                 'agent_idx': 0,
                 'transcript': [],
@@ -670,16 +666,36 @@ with tab1:
             from dialectic_poc import DebateTurn
             from node_factory import NodeFactory
 
-            # Create node
-            node = NodeFactory.create_node_from_transcript(
-                node_type=NodeType.EXPLORATION,
-                transcript=state['transcript'],
-                passage=state['passage'],
-                branch_question=None
-            )
+            # Create node - different for main vs branch
+            if state['debate_type'] == 'branch':
+                node = NodeFactory.create_node_from_transcript(
+                    node_type=NodeType.EXPLORATION,
+                    transcript=state['transcript'],
+                    passage=None,
+                    branch_question=state['branch_question']
+                )
+            else:
+                node = NodeFactory.create_node_from_transcript(
+                    node_type=NodeType.EXPLORATION,
+                    transcript=state['transcript'],
+                    passage=state['passage'],
+                    branch_question=None
+                )
 
             # Add to DAG
             st.session_state.session.dag.add_node(node)
+
+            # If branch, create edge to parent
+            if state['debate_type'] == 'branch' and state['parent_node_id']:
+                from debate_graph import Edge, EdgeType
+                edge = Edge(
+                    from_node_id=state['parent_node_id'],
+                    to_node_id=node.node_id,
+                    edge_type=EdgeType.BRANCHES_FROM,
+                    description=f"Branch: {state['branch_question'][:50]}..."
+                )
+                st.session_state.session.dag.add_edge(edge)
+
             st.session_state.session.save()
             st.session_state.current_node = node
 
@@ -705,13 +721,20 @@ with tab1:
                     'content': f"**Themes:** {tags_text}"
                 })
 
-            st.session_state.chat_history.append({
-                'role': 'system',
-                'content': f"✅ Main debate complete! **{node.topic}**"
-            })
+            # Different completion message for main vs branch
+            if state['debate_type'] == 'branch':
+                st.session_state.chat_history.append({
+                    'role': 'system',
+                    'content': f"✅ Branch debate complete! **{node.topic}**"
+                })
+            else:
+                st.session_state.chat_history.append({
+                    'role': 'system',
+                    'content': f"✅ Main debate complete! **{node.topic}**"
+                })
 
-            # Check if auto-branching is enabled
-            if auto_branch and 'auto_branch_done' not in st.session_state:
+            # Check if auto-branching is enabled (only for main debates)
+            if state['debate_type'] == 'main' and auto_branch and 'auto_branch_done' not in st.session_state:
                 st.session_state.auto_branch_done = True
 
                 # Add message about starting auto-branch
@@ -740,47 +763,61 @@ with tab1:
                     for obs in observers_data
                 ]
 
-                # Run branch debates for each observer
+                # Generate all branch questions
+                transcript_text = "\n\n".join([
+                    f"**{turn.agent_name}** (Round {turn.round_num}):\n{turn.content}"
+                    for turn in state['transcript']
+                ])
+
+                branch_queue = []
                 for i, observer in enumerate(observers, 1):
-                    # Get transcript text
-                    transcript_text = "\n\n".join([
-                        f"**{turn.agent_name}** (Round {turn.round_num}):\n{turn.content}"
-                        for turn in state['transcript']
-                    ])
-
-                    # Observer identifies branch question
                     branch_question = observer.identify_branch(transcript_text, state['passage'])
-
-                    # Add to chat
-                    st.session_state.chat_history.append({
-                        'role': 'system',
-                        'content': f"🔍 **{observer.name}** asks: _{branch_question}_"
+                    branch_queue.append({
+                        'question': branch_question,
+                        'observer_name': observer.name,
+                        'parent_node_id': node.node_id,
+                        'branch_num': i
                     })
 
-                    # Create logger
-                    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
-                        branch_log_path = f.name
-                    branch_logger = Logger(branch_log_path)
+                # Store branch queue
+                st.session_state.branch_queue = branch_queue
+                st.session_state.branch_queue_index = 0
 
-                    # Run branch debate
-                    branch_node = st.session_state.session.process_branch(
-                        branch_question=branch_question,
-                        parent_node_id=node.node_id,
-                        agents=agents,
-                        logger=branch_logger,
-                        max_rounds=branch_rounds
-                    )
+            # Check if there are pending branches to run
+            if hasattr(st.session_state, 'branch_queue') and st.session_state.branch_queue_index < len(st.session_state.branch_queue):
+                # Start next branch
+                branch_info = st.session_state.branch_queue[st.session_state.branch_queue_index]
+                st.session_state.branch_queue_index += 1
 
-                    st.session_state.chat_history.append({
-                        'role': 'system',
-                        'content': f"✅ Branch {i} complete: **{branch_node.topic[:60]}...**"
-                    })
+                # Add message
+                st.session_state.chat_history.append({
+                    'role': 'system',
+                    'content': f"🔍 **{branch_info['observer_name']}** asks: _{branch_info['question']}_"
+                })
 
-            # Cleanup
-            st.session_state.debate_running = False
-            del st.session_state.debate_state
+                # Start branch debate
+                st.session_state.debate_state = {
+                    'debate_type': 'branch',
+                    'passage': None,
+                    'branch_question': branch_info['question'],
+                    'parent_node_id': branch_info['parent_node_id'],
+                    'round': 1,
+                    'agent_idx': 0,
+                    'transcript': [],
+                    'max_rounds': branch_rounds
+                }
+                st.session_state.debate_running = True
+                st.rerun()
+            else:
+                # All done - cleanup
+                st.session_state.debate_running = False
+                if 'debate_state' in st.session_state:
+                    del st.session_state.debate_state
+                if hasattr(st.session_state, 'branch_queue'):
+                    del st.session_state.branch_queue
+                    del st.session_state.branch_queue_index
 
-            st.rerun()
+                st.rerun()
 
         else:
             # Generate next turn
@@ -792,7 +829,11 @@ with tab1:
                 system_prompt = agent.get_system_prompt()
 
                 if state['round'] == 1:
-                    user_prompt = f"Passage:\n{state['passage']}\n\nProvide your opening analysis."
+                    # First round - different prompts for main vs branch debates
+                    if state['debate_type'] == 'branch':
+                        user_prompt = f"Question to explore:\n{state['branch_question']}\n\nProvide your opening analysis."
+                    else:
+                        user_prompt = f"Passage:\n{state['passage']}\n\nProvide your opening analysis."
                 else:
                     from dialectic_poc import DebateTurn
                     recent_turns = "\n\n".join([
@@ -837,65 +878,6 @@ with tab1:
                     })
 
             # Rerun to show turn and continue
-            st.rerun()
-
-            # Auto-branch if enabled
-            if auto_branch:
-                with st.spinner(f"Generating {num_observers} observer(s) to identify branch questions..."):
-                    # Generate observers
-                    observers_data = generate_observer_ensemble(
-                        passage,
-                        num_perspectives=num_observers,
-                        verbose=False
-                    )
-
-                    # Convert to Observer objects
-                    observers = [
-                        Observer(
-                            name=obs['name'],
-                            bias=obs['bias'],
-                            focus=obs['focus'],
-                            blind_spots=obs['blind_spots'],
-                            example_questions=obs.get('example_questions', []),
-                            anti_examples=obs.get('anti_examples', [])
-                        )
-                        for obs in observers_data
-                    ]
-
-                # Run branch debates for each observer
-                for i, observer in enumerate(observers, 1):
-                    with st.spinner(f"Observer {i}/{num_observers} ({observer.name}) identifying branch..."):
-                        # Get transcript text for observer
-                        transcript_text = "\n\n".join([
-                            f"**{turn['agent_name']}** (Round {turn['round_num']}):\n{turn['content']}"
-                            for turn in node.turns_data
-                        ])
-
-                        # Observer identifies branch question
-                        branch_question = observer.identify_branch(transcript_text, passage)
-
-                    st.info(f"🔍 {observer.name} asks: {branch_question}")
-
-                    with st.spinner(f"Running branch debate {i}/{num_observers}..."):
-                        # Create new logger for branch
-                        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
-                            branch_log_path = f.name
-
-                        branch_logger = Logger(branch_log_path)
-
-                        # Run branch debate
-                        branch_node = st.session_state.session.process_branch(
-                            branch_question=branch_question,
-                            parent_node_id=node.node_id,
-                            agents=agents,
-                            logger=branch_logger,
-                            max_rounds=branch_rounds
-                        )
-
-                        st.success(f"✅ Branch {i} complete: {branch_node.topic[:60]}...")
-
-            st.session_state.debate_running = False
-            st.success(f"✅ All debates complete! Main node + {num_observers if auto_branch else 0} branch(es)")
             st.rerun()
 
 # TAB 2: Graph View
