@@ -296,57 +296,179 @@ if st.sidebar.button("➕ Create New Session"):
 
     st.sidebar.success("✅ Ready for new session. Session name will be auto-generated from passage.")
 
+# Initialize chat history in session state
+if 'chat_history' not in st.session_state:
+    st.session_state.chat_history = []
+if 'current_debate_turns' not in st.session_state:
+    st.session_state.current_debate_turns = []
+
 # Main area: Tabs
-tab1, tab2, tab3, tab4 = st.tabs(["📝 Input", "💬 Debate", "🕸️ Graph", "📖 Narrative"])
+tab1, tab2, tab3 = st.tabs(["💬 Debate Chat", "🕸️ Graph", "📖 Narrative"])
 
-# TAB 1: Input
+# TAB 1: Debate Chat (Unified Input + Live Debate)
 with tab1:
-    st.header("Input Passage")
+    st.header("💬 Debate Chat")
 
+    # Show existing debate history in chat format
+    for msg in st.session_state.chat_history:
+        if msg['role'] == 'user':
+            with st.chat_message("user"):
+                st.markdown(msg['content'])
+        elif msg['role'] == 'system':
+            with st.chat_message("assistant", avatar="🎭"):
+                st.markdown(msg['content'])
+        elif msg['role'] == 'agent':
+            with st.chat_message("assistant", avatar=msg.get('avatar', '🤔')):
+                st.markdown(f"**{msg['name']}** (Round {msg.get('round', '?')})")
+                st.markdown(msg['content'])
+
+    # Input area at bottom
+    st.divider()
+
+    # Passage input
     passage = st.text_area(
         "Enter a passage to debate:",
-        height=200,
-        placeholder="Enter philosophical text, quotes, or any passage you want the agents to analyze..."
+        height=150,
+        placeholder="Enter philosophical text, quotes, or any passage you want the agents to analyze...",
+        key="passage_input"
     )
 
-    col1, col2 = st.columns(2)
+    if st.button("🚀 Start Main Debate", type="primary", disabled=not passage or st.session_state.debate_running, use_container_width=True):
+        st.session_state.debate_running = True
 
-    with col1:
-        if st.button("🚀 Start Main Debate", type="primary", disabled=not passage or st.session_state.debate_running):
-            st.session_state.debate_running = True
+        # Add user passage to chat
+        st.session_state.chat_history.append({
+            'role': 'user',
+            'content': f"**Passage to debate:**\n\n{passage}"
+        })
 
-            # Auto-generate session name if no session exists
-            if st.session_state.session is None:
-                with st.spinner("Generating session name..."):
-                    session_name = generate_session_name(passage)
-                    st.session_state.session = DebateSession(session_name)
-                    st.info(f"📁 Created session: {format_session_display_name(session_name)}")
+        # Auto-generate session name if no session exists
+        if st.session_state.session is None:
+            session_name = generate_session_name(passage)
+            st.session_state.session = DebateSession(session_name)
+            st.session_state.chat_history.append({
+                'role': 'system',
+                'content': f"📁 Created session: **{format_session_display_name(session_name)}**"
+            })
 
-            # Generate agents if needed
-            if st.session_state.agents is None:
-                with st.spinner(f"Generating {num_auto_agents} agents tuned to passage..."):
-                    agents = generate_agent_ensemble(passage, num_agents=num_auto_agents, verbose=False)
-                    st.session_state.agents = agents
-                    st.info(f"Generated agents: {', '.join([a.name for a in agents])}")
-            else:
-                agents = st.session_state.agents
+        # Generate agents if needed
+        if st.session_state.agents is None:
+            agents = generate_agent_ensemble(passage, num_agents=num_auto_agents, verbose=False)
+            st.session_state.agents = agents
+            agent_names = ', '.join([a.name for a in agents])
+            st.session_state.chat_history.append({
+                'role': 'system',
+                'content': f"🤖 Generated agents: **{agent_names}**"
+            })
+        else:
+            agents = st.session_state.agents
 
-            with st.spinner("Running debate..."):
-                # Create temporary logger
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
-                    log_path = f.name
+        # Add system message for debate start
+        st.session_state.chat_history.append({
+            'role': 'system',
+            'content': f"🎭 Starting main debate ({max_rounds} rounds)..."
+        })
 
-                logger = Logger(log_path)
+        # Rerun to show setup messages
+        st.rerun()
 
-                # Run debate
-                node = st.session_state.session.process_passage(
-                    passage=passage,
-                    agents=agents,
-                    logger=logger,
-                    max_rounds=max_rounds
-                )
+    # Check if debate needs to continue (progressive execution)
+    if st.session_state.debate_running and st.session_state.session:
+        # Initialize debate state if needed
+        if 'debate_state' not in st.session_state:
+            st.session_state.debate_state = {
+                'passage': passage,
+                'round': 1,
+                'agent_idx': 0,
+                'transcript': [],
+                'max_rounds': max_rounds
+            }
 
-                st.session_state.current_node = node
+        state = st.session_state.debate_state
+        agents = st.session_state.agents
+
+        # Check if debate is complete
+        if state['round'] > state['max_rounds']:
+            # Finalize debate
+            from dialectic_poc import DebateTurn
+            from node_factory import NodeFactory
+
+            # Create node
+            node = NodeFactory.create_node_from_transcript(
+                node_type=NodeType.EXPLORATION,
+                transcript=state['transcript'],
+                passage=state['passage'],
+                branch_question=None
+            )
+
+            # Add to DAG
+            st.session_state.session.dag.add_node(node)
+            st.session_state.session.save()
+            st.session_state.current_node = node
+
+            # Add completion message
+            st.session_state.chat_history.append({
+                'role': 'system',
+                'content': f"✅ Main debate complete! **{node.topic}**"
+            })
+
+            # Cleanup
+            st.session_state.debate_running = False
+            del st.session_state.debate_state
+
+            st.rerun()
+
+        else:
+            # Generate next turn
+            agent = agents[state['agent_idx']]
+
+            # Show status
+            with st.status(f"Round {state['round']}: {agent.name} is thinking...", expanded=True):
+                # Build prompts
+                system_prompt = agent.get_system_prompt()
+
+                if state['round'] == 1:
+                    user_prompt = f"Passage:\n{state['passage']}\n\nProvide your opening analysis."
+                else:
+                    from dialectic_poc import DebateTurn
+                    recent_turns = "\n\n".join([
+                        f"{t.agent_name}: {t.content}"
+                        for t in state['transcript'][-(len(agents)*2):]
+                    ])
+                    user_prompt = f"Previous discussion:\n{recent_turns}\n\nYour response:"
+
+                # Make LLM call
+                from dialectic_poc import llm_call, DebateTurn
+                response = llm_call(system_prompt, user_prompt, temperature=0.7)
+
+                # Create turn
+                turn = DebateTurn(agent.name, response, state['round'])
+                state['transcript'].append(turn)
+
+                # Add to chat history
+                avatar_map = {0: '📖', 1: '✨', 2: '🏛️', 3: '🎨', 4: '🔬'}
+                st.session_state.chat_history.append({
+                    'role': 'agent',
+                    'name': agent.name,
+                    'content': response,
+                    'round': state['round'],
+                    'avatar': avatar_map.get(state['agent_idx'], '🤔')
+                })
+
+            # Advance to next agent/round
+            state['agent_idx'] += 1
+            if state['agent_idx'] >= len(agents):
+                state['agent_idx'] = 0
+                state['round'] += 1
+                # Add round marker for next round
+                if state['round'] <= state['max_rounds']:
+                    st.session_state.chat_history.append({
+                        'role': 'system',
+                        'content': f"**Round {state['round']}**"
+                    })
+
+            # Rerun to show turn and continue
+            st.rerun()
 
             # Auto-branch if enabled
             if auto_branch:
@@ -407,158 +529,8 @@ with tab1:
             st.success(f"✅ All debates complete! Main node + {num_observers if auto_branch else 0} branch(es)")
             st.rerun()
 
-    with col2:
-        branch_question = st.text_input("Branch question (optional):")
-        if st.button("🌿 Start Branch Debate", disabled=not branch_question or st.session_state.current_node is None):
-            if st.session_state.session is None:
-                st.error("Please create a session first")
-            else:
-                with st.spinner("Running branch debate..."):
-                    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
-                        log_path = f.name
-
-                    logger = Logger(log_path)
-
-                    node = st.session_state.session.process_branch(
-                        branch_question=branch_question,
-                        parent_node_id=st.session_state.current_node.node_id,
-                        agents=st.session_state.agents,
-                        logger=logger,
-                        max_rounds=branch_rounds
-                    )
-
-                    st.session_state.current_node = node
-
-                st.success(f"✅ Branch complete! Created node: {node.topic[:80]}...")
-                st.rerun()
-
-# TAB 2: Debate View (Chat Bubbles)
+# TAB 2: Graph View
 with tab2:
-    st.header("Debate Transcript")
-
-    if st.session_state.session and st.session_state.session.dag.nodes:
-        # Node selector
-        nodes = st.session_state.session.dag.get_all_nodes()
-        node_options = {
-            f"Node {i+1} [{node.node_type.value.upper()}]: {node.topic[:80]}": node
-            for i, node in enumerate(nodes)
-        }
-
-        selected_label = st.selectbox("Select debate to view:", list(node_options.keys()))
-        selected_node = node_options[selected_label]
-
-        # Display node metadata
-        st.markdown(f"**Type:** {selected_node.node_type.value}")
-        st.markdown(f"**Tags:** {' '.join(['#' + tag for tag in sorted(selected_node.theme_tags)])}")
-
-        if selected_node.passage:
-            with st.expander("📄 Original Passage"):
-                st.markdown(selected_node.passage)
-
-        if selected_node.branch_question:
-            st.info(f"**Branch Question:** {selected_node.branch_question}")
-
-        st.divider()
-
-        # Chat bubbles
-        if selected_node.turns_data:
-            # Get unique agent names for color mapping
-            unique_agents = list(dict.fromkeys([t['agent_name'] for t in selected_node.turns_data]))
-            agent_to_index = {name: i for i, name in enumerate(unique_agents)}
-
-            for turn in selected_node.turns_data:
-                agent_name = turn['agent_name'].lower().replace('the ', '')
-                agent_index = agent_to_index.get(turn['agent_name'], 0)
-
-                st.markdown(f"""
-                <div class="chat-message {agent_name} agent-{agent_index}">
-                    <div class="agent-name">
-                        {turn['agent_name']}
-                        <span class="round-badge">Round {turn['round_num']}</span>
-                    </div>
-                    <div>{turn['content']}</div>
-                </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.info("No transcript available for this node")
-
-        # Show resolution
-        st.divider()
-        st.subheader("Resolution")
-        st.markdown(selected_node.resolution)
-
-        if selected_node.key_claims:
-            st.subheader("Key Claims")
-            for claim in selected_node.key_claims:
-                st.markdown(f"- {claim}")
-
-        # Continue from this node
-        st.divider()
-        st.subheader("🔄 Continue from this node")
-
-        if st.button("🎯 Generate Continuation Strategy", key=f"gen_strategy_{selected_node.node_id}"):
-            with st.spinner("Generating continuation strategy..."):
-                strategy = generate_continuation_strategy(selected_node)
-                st.session_state.continuation_strategy = strategy
-                st.session_state.continuation_node_id = selected_node.node_id
-                st.rerun()
-
-        # Show generated strategy if available
-        if (hasattr(st.session_state, 'continuation_strategy') and
-            hasattr(st.session_state, 'continuation_node_id') and
-            st.session_state.continuation_node_id == selected_node.node_id):
-
-            strategy = st.session_state.continuation_strategy
-
-            st.info(f"**Continuation Type:** {strategy['approach_type']}")
-            st.markdown(f"**Proposed Question:**\n> {strategy['question']}")
-            st.markdown(f"**Rationale:** {strategy['rationale']}")
-
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                # Allow editing the question
-                edited_question = st.text_area(
-                    "Edit continuation question if needed:",
-                    value=strategy['question'],
-                    key=f"edit_q_{selected_node.node_id}"
-                )
-
-            with col2:
-                st.markdown("") # Spacer
-                st.markdown("") # Spacer
-                if st.button("▶️ Run Continuation", type="primary", key=f"run_cont_{selected_node.node_id}"):
-                    if st.session_state.session and st.session_state.agents:
-                        with st.spinner("Running continuation debate..."):
-                            # Create logger
-                            with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
-                                log_path = f.name
-
-                            logger = Logger(log_path)
-
-                            # Run branch debate with continuation question
-                            cont_node = st.session_state.session.process_branch(
-                                branch_question=edited_question,
-                                parent_node_id=selected_node.node_id,
-                                agents=st.session_state.agents,
-                                logger=logger,
-                                max_rounds=branch_rounds
-                            )
-
-                            st.success(f"✅ Continuation created: {cont_node.topic[:60]}...")
-
-                            # Clear continuation state
-                            delattr(st.session_state, 'continuation_strategy')
-                            delattr(st.session_state, 'continuation_node_id')
-
-                            st.rerun()
-                    else:
-                        st.error("No active session or agents available")
-
-    else:
-        st.info("No debates yet. Create a session and run a debate from the Input tab.")
-
-# TAB 3: Graph View
-with tab3:
     st.header("Debate Graph (DAG)")
 
     if st.session_state.session and st.session_state.session.dag.nodes:
@@ -688,8 +660,8 @@ with tab3:
     else:
         st.info("No graph yet. Create a session and run debates to build the graph.")
 
-# TAB 4: Narrative View
-with tab4:
+# TAB 3: Narrative View
+with tab3:
     st.header("Linearized Narrative")
 
     if st.session_state.session and st.session_state.session.dag.nodes:
