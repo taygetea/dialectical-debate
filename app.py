@@ -378,11 +378,17 @@ with tab1:
             # Generate agents if needed
             if st.session_state.agents is None:
                 with st.spinner(f"🤖 Generating {num_auto_agents} diverse debate agents..."):
+                    # Use multi-model approach for genuine diversity
+                    models = [
+                        "electronhub/claude-sonnet-4-5-20250929",
+                        "electronhub/gpt-5.1",
+                        "electronhub/gemini-2.5-flash"
+                    ]
                     agents = generate_agent_ensemble(
                         passage,
                         num_agents=num_auto_agents,
                         verbose=False,
-                        default_model=st.session_state.debate_model
+                        models=models
                     )
                     st.session_state.agents = agents
 
@@ -410,7 +416,26 @@ with tab1:
         # Editable agent fields
         edited_agents = []
         for i, agent in enumerate(st.session_state.agents):
-            with st.expander(f"✏️ {agent.name}", expanded=True):
+            # Show tradition if available
+            title = f"✏️ {agent.name}"
+            if hasattr(agent, 'tradition_name') and agent.tradition_name:
+                title += f" ({agent.tradition_name})"
+
+            with st.expander(title, expanded=True):
+                # Show philosophical identity (read-only) if available
+                if hasattr(agent, 'intellectual_lineage') and agent.intellectual_lineage:
+                    st.info(f"**Lineage:** {agent.intellectual_lineage}")
+
+                if hasattr(agent, 'methodology') and agent.methodology:
+                    st.info(f"**Methodology:** {agent.methodology}")
+
+                if hasattr(agent, 'initial_reading') and agent.initial_reading:
+                    with st.container():
+                        st.markdown("**Initial Reading:**")
+                        st.markdown(f"_{agent.initial_reading}_")
+
+                st.markdown("---")
+
                 col1, col2 = st.columns([1, 2])
                 with col1:
                     name = st.text_input(
@@ -439,9 +464,27 @@ with tab1:
                     key=f"agent_model_{i}"
                 )
 
-                # Update agent with edited values
+                # Update agent with edited values, preserving extended fields
                 from dialectic_poc import Agent
-                edited_agents.append(Agent(name, stance, focus, model))
+                edited_agent = Agent(name, stance, focus, model)
+
+                # Preserve extended fields from two-phase initialization
+                if hasattr(agent, 'intellectual_lineage'):
+                    edited_agent.intellectual_lineage = agent.intellectual_lineage
+                if hasattr(agent, 'methodology'):
+                    edited_agent.methodology = agent.methodology
+                if hasattr(agent, 'blindspots'):
+                    edited_agent.blindspots = agent.blindspots
+                if hasattr(agent, 'voice_style'):
+                    edited_agent.voice_style = agent.voice_style
+                if hasattr(agent, 'initial_reading'):
+                    edited_agent.initial_reading = agent.initial_reading
+                if hasattr(agent, 'likely_disputes'):
+                    edited_agent.likely_disputes = agent.likely_disputes
+                if hasattr(agent, 'tradition_name'):
+                    edited_agent.tradition_name = agent.tradition_name
+
+                edited_agents.append(edited_agent)
 
         # Action buttons
         col1, col2, col3 = st.columns(3)

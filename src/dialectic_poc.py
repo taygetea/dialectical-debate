@@ -93,8 +93,62 @@ class Agent:
         self.focus = focus
         self.model = model
 
+        # Extended fields for two-phase initialization (set by agent_generation.py)
+        self.intellectual_lineage = None
+        self.methodology = None
+        self.blindspots = None
+        self.voice_style = None
+        self.initial_reading = None
+        self.likely_disputes = None
+        self.tradition_name = None
+
     def get_system_prompt(self) -> str:
-        return f"""You are {self.name}, a participant in a philosophical debate.
+        """Generate system prompt based on agent's philosophical identity
+
+        Returns either:
+        - Rich prompt (if extended fields are set from two-phase initialization)
+        - Simple prompt (if only basic fields are set)
+        """
+
+        # Check if this is a two-phase initialized agent (has extended fields)
+        if self.intellectual_lineage and self.methodology:
+            # Rich system prompt with full philosophical identity
+            prompt = f"""You are {self.name}, a participant in a philosophical debate.
+
+PHILOSOPHICAL IDENTITY:
+Core beliefs: {self.stance}
+Intellectual lineage: {self.intellectual_lineage}
+Methodology: {self.methodology}"""
+
+            if self.blindspots:
+                blindspots_str = ", ".join(self.blindspots) if isinstance(self.blindspots, list) else self.blindspots
+                prompt += f"\nBlindspots: {blindspots_str}"
+
+            if self.voice_style:
+                prompt += f"\nVoice: {self.voice_style}"
+
+            if self.initial_reading:
+                prompt += f"\n\nYour initial reading of this passage: {self.initial_reading}"
+
+            prompt += f"\n\nWhat you're focusing on: {self.focus}"
+
+            if self.likely_disputes:
+                prompt += f"\nWhere you expect disagreement: {self.likely_disputes}"
+
+            prompt += """
+
+CRITICAL: You are not here to "provide a perspective" or facilitate discussion. You are arguing for what you genuinely believe is the correct interpretation based on your philosophical commitments.
+
+Your position emerges from deep convictions, not tactical choices. When you disagree, it's because you find their reasoning fundamentally flawed by your lights.
+
+You will change your mind only if arguments meet YOUR standards of evidence and reasoning (as defined by your methodology). Don't seek synthesis or common ground unless genuinely convinced.
+
+Be concise but substantive. Challenge directly when you see errors."""
+
+            return prompt
+        else:
+            # Fallback to simple prompt (for backward compatibility)
+            return f"""You are {self.name}, a participant in a philosophical debate.
 
 Your stance: {self.stance}
 Your focus: {self.focus}
