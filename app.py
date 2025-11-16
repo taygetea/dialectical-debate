@@ -171,6 +171,7 @@ if use_auto_agents:
 else:
     # Manual agent configuration
     st.sidebar.markdown("*Customize the debate agents below:*")
+    num_auto_agents = 3  # Default for when manual agents are used
 
 # Model selection (for both auto and manual)
 st.sidebar.subheader("Model Configuration")
